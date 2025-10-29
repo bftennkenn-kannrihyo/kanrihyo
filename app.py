@@ -136,33 +136,39 @@ with tabs[0]:
                 else:
                     filtered = df.copy()
         
-                # ✅ チェック項目だけのデータ表示
+                # ✅ チェック項目だけのデータ表示（編集可能）
                 results = filtered[selected_fields]
                 st.session_state["results"] = results  # 保持（再読み込み対応）
         
                 st.success(f"✅ {len(results)}件のデータを表示しました。")
-                st.subheader("📋 表示中のデータ（Excel風フィルター対応）")
+                st.subheader("📋 表示中のデータ（直接編集可）")
         
-                # 🪄 Excelみたいにフィルター・並び替え可能なデータフレーム
-                st.dataframe(
+                # 🧩 Excel風に編集可能なテーブル
+                edited_df = st.data_editor(
                     results,
                     use_container_width=True,
                     hide_index=True,
-                    column_config=None
+                    num_rows="dynamic",  # 行の追加・削除も可
                 )
         
+                # 編集結果をセッションに反映
+                st.session_state["edited_results"] = edited_df
+        
+                st.info("※セルを直接クリックして編集できます。")
+        
         # --- セッション保持による再表示 ---
-        elif "results" in st.session_state and not st.session_state["results"].empty:
-            results = st.session_state["results"]
-            st.subheader("📋 前回表示したデータ（Excel風フィルター対応）")
-            st.dataframe(
-                results,
+        elif "edited_results" in st.session_state:
+            edited_df = st.session_state["edited_results"]
+            st.subheader("📋 前回のデータ（編集内容を保持中）")
+            st.data_editor(
+                edited_df,
                 use_container_width=True,
                 hide_index=True,
-                column_config=None
+                num_rows="dynamic",
             )
         else:
             st.info("まずExcelファイルをアップロードして『データを表示』を押してください。")
+
 
 
 
