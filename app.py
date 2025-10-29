@@ -129,15 +129,25 @@ with tabs[0]:
             elif "施設名" not in df.columns:
                 st.error("Excelに『施設名』という列が必要です。")
             else:
+                # 絞り込み
                 if query.strip():
                     names = [n.strip() for n in query.splitlines() if n.strip()]
                     filtered = df[df["施設名"].isin(names)]
                 else:
                     filtered = df.copy()
-
+        
                 results = filtered[selected_fields]
-                st.session_state["results_data"] = results
-                st.success("📊 データを準備しました。下に結果が表示されます。")
+                st.session_state["results"] = results  # ✅ 結果をセッションに保存
+                st.success(f"✅ {len(results)} 件のデータを抽出しました。")
+        
+        # --- データ表示（保持機能付き）---
+        if "results" in st.session_state and not st.session_state["results"].empty:
+            results = st.session_state["results"]
+            st.subheader("📋 絞り込み前データ")
+            st.dataframe(results, use_container_width=True)
+        else:
+            st.info("まず『データを表示』ボタンを押してください。")
+
 
     # --- 結果表示＆スプレッドシート出力 ---
     if "results_data" in st.session_state:
