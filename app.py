@@ -126,6 +126,29 @@ with tabs[0]:
                         refined.to_csv(output, index=False, encoding="utf-8-sig")
                         st.download_button("CSVで保存", data=output.getvalue(),
                                            file_name="filtered_data.csv", mime="text/csv")
+                        import gspread
+                        from google.oauth2.service_account import Credentials
+                        
+                        def connect_to_gsheet():
+                            scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                            creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
+                            client = gspread.authorize(creds)
+                            return client
+                        
+                        
+                        # ✅ Googleスプレッドシートに上書き保存ボタン
+                        if st.button("Googleスプレッドシートに上書き保存"):
+                            try:
+                                client = connect_to_gsheet()
+                                # ⚙️ あなたのスプレッドシート名を指定
+                                sheet = client.open("医療システム管理表").sheet1  
+                                # スプレッドシートを一旦クリアして、最新データを上書き
+                                sheet.clear()
+                                sheet.update([refined.columns.values.tolist()] + refined.values.tolist())
+                                st.success("✅ Googleスプレッドシートに上書き保存しました！")
+                            except Exception as e:
+                                st.error(f"❌ エラーが発生しました: {e}")
+
     else:
         st.info("まずExcelファイルをアップロードしてください。")
 
