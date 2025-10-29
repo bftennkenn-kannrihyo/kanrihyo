@@ -157,29 +157,34 @@ with tabs[0]:
     # --- Googleスプレッドシートへの上書き保存 ---
     if st.button("Googleスプレッドシートに上書き保存"):
         try:
-            st.info("🔄 スプレッドシートに接続中…")
-            client = connect_to_gsheet()
-            ss = client.open("医療システム管理表")
-            sheet = ss.worksheet("シート1")  # ← シート名を合わせる
-            st.success("✅ 接続成功！")
+            # ✅ データをセッションから安全に取得
+            if "results" not in st.session_state or st.session_state["results"].empty:
+                st.warning("⚠️ データが見つかりません。『データを表示』ボタンを先に押してください。")
+            else:
+                results = st.session_state["results"]
+                clean_df = results.fillna("").astype(str)
+                data = [clean_df.columns.tolist()] + clean_df.values.tolist()
     
-            data_to_write = st.session_state["results"]
-            clean_df = data_to_write.fillna("").astype(str)
-            data = [clean_df.columns.tolist()] + clean_df.values.tolist()
+                st.info(f"🧾 書き込みデータ件数: {len(clean_df)}")
     
-            # ✅ 全削除してから新規書き込み
-            sheet.clear()
+                # ✅ Googleスプレッドシート接続
+                st.info("🔄 スプレッドシートに接続中…")
+                client = connect_to_gsheet()
+                ss = client.open("医療システム管理表")
+                sheet = ss.worksheet("シート1")  # ← シート名を一致させる
+                st.success(f"✅ 接続成功！ 書き込み先シート: {sheet.title}")
     
-            # --- update_cells方式で確実に書き込む ---
-            cell_list = sheet.range(1, 1, len(data), len(data[0]))
-            flat_data = [item for row in data for item in row]
+                # ✅ シートをクリアして新規書き込み
+                sheet.clear()
     
-            for i, cell in enumerate(cell_list):
-                cell.value = flat_data[i]
+                import time
+                time.sleep(1)  # Google側の反映待ち（重要）
     
-            sheet.update_cells(cell_list, value_input_option="USER_ENTERED")
-    
-            st.success("✅ スプレッドシートに正しく上書きされました！")
+                # --- 1行ずつ書き込む（安定性優先） ---
+                for i, row in enumerate(data):
+                    sheet.insert_row(row, i + 1)
+                
+                st.success("✅ スプレッドシートに上書き保存しました！")
     
         except Exception as e:
             st.error(f"❌ 本当のエラーが発生しました: {e}")
