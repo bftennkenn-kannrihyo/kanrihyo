@@ -150,6 +150,8 @@ with tabs[0]:
                         creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
                         client = gspread.authorize(creds)
                         return client
+                        
+                    st.write("書き込み予定データ数:", len(results))
 
                     # スプレッドシート上書き保存ボタン
                     if st.button("Googleスプレッドシートに上書き保存"):
