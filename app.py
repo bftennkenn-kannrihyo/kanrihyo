@@ -20,33 +20,45 @@ def read_excel(upload):
 with tabs[0]:
     st.header("医療システム管理表")
     file = st.file_uploader("Excelファイルを選択", type=["xlsx"])
-    if file:
-        df = read_excel(file)
+    df = read_excel(file) if file else None
+
+    if df is not None:
         st.success(f"{len(df)}件のデータを読み込みました。")
         st.dataframe(df.head(10), use_container_width=True)
 
-    st.markdown("### 🔍 病院名検索")
-    query = st.text_area("病院名をコピペ（1行1件）", height=150)
-    if st.button("検索"):
-        if file is None:
-            st.warning("先にExcelを読み込んでください。")
-        else:
-            names = [n.strip() for n in query.splitlines() if n.strip()]
-            results = df[df["病院名"].isin(names)]
-            st.dataframe(results, use_container_width=True)
-            # エクスポート
-            output = BytesIO()
-            results.to_csv(output, index=False, encoding="utf-8-sig")
-            st.download_button("検索結果をCSVで保存", data=output.getvalue(), file_name="search_result.csv", mime="text/csv")
+        st.markdown("### 🔍 病院名検索")
+        query = st.text_area("病院名をコピペ（1行1件）", height=150)
 
-# 生体タブ（同じ構成）
+        st.markdown("**表示する項目を選択**")
+        selected_fields = []
+        # Excel列名をチェックボックスに自動展開
+        for col in df.columns:
+            if st.checkbox(col, value=(col == "病院名")):
+                selected_fields.append(col)
+
+        if st.button("検索"):
+            if "病院名" not in df.columns:
+                st.error("Excelに『病院名』という列が必要です。")
+            elif not query.strip():
+                st.warning("検索したい病院名を入力してください。")
+            elif not selected_fields:
+                st.warning("少なくとも1つ項目を選択してください。")
+            else:
+                names = [n.strip() for n in query.splitlines() if n.strip()]
+                results = df[df["病院名"].isin(names)][selected_fields]
+                st.dataframe(results, use_container_width=True)
+                # エクスポート
+                output = BytesIO()
+                results.to_csv(output, index=False, encoding="utf-8-sig")
+                st.download_button("検索結果をCSVで保存", data=output.getvalue(),
+                                   file_name="search_result.csv", mime="text/csv")
+    else:
+        st.info("Excelファイルをアップロードしてください。")
+
+# 生体タブ（同じ構成で後から追加可）
 with tabs[1]:
     st.header("生体システム管理表")
-    file2 = st.file_uploader("Excelファイルを選択", type=["xlsx"], key="bio")
-    if file2:
-        df2 = read_excel(file2)
-        st.success(f"{len(df2)}件のデータを読み込みました。")
-        st.dataframe(df2.head(10), use_container_width=True)
+    st.info("ここも後で医療タブと同じ構成にできます。")
 
 # カレンダータブ
 with tabs[2]:
