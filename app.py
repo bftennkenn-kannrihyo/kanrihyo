@@ -167,26 +167,34 @@ with tabs[0]:
     # --- Googleスプレッドシートへの上書き保存 ---
     if st.button("Googleスプレッドシートに上書き保存"):
         if "results" not in st.session_state or st.session_state["results"].empty:
-            st.warning("⚠️ データがありません。『データを表示』ボタンを先に押してください。")
+            st.warning("⚠️ データがありません。『データを表示』ボタンを押してください。")
         else:
             try:
-                st.info("🔄 スプレッドシートに接続中…")
+                st.info("🔄 Googleスプレッドシートに接続中...")
+    
+                # --- Google認証 ---
                 client = connect_to_gsheet()
-                ss = client.open("医療システム管理表")
-                sheet = ss.sheet1
+    
+                # ✅ スプレッドシートIDをURLから直接指定！
+                SPREADSHEET_ID = "15bsvTOQOJrHjgsVh2IJFzKkaig2Rk2YLA130y8_k4Vs"
+                sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+    
                 st.success("✅ 接続成功！")
     
+                # --- 書き込みデータを整形 ---
                 results = st.session_state["results"].fillna("").astype(str)
                 st.write(f"📄 書き込みデータ件数: {len(results)}")
     
-                # DataFrame → list に変換してアップロード
                 data = [results.columns.tolist()] + results.values.tolist()
+    
+                # --- スプレッドシート上書き ---
                 sheet.clear()
                 sheet.update(data)
+    
                 st.success("✅ Googleスプレッドシートに上書き保存しました！")
     
             except Exception as e:
-                st.error(f"❌ エラーが発生しました: {str(e)}")
+                st.error(f"❌ 本当のエラーが発生しました: {str(e)}")
 
     else:
         st.info("まずExcelファイルをアップロードして『データを表示』を押してください。")
