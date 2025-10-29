@@ -164,7 +164,7 @@ with tabs[0]:
                             try:
                                 st.info("🔄 スプレッドシートに接続中…")
                                 client = connect_to_gsheet()
-                                sheet = client.open("医療システム管理表").sheet1
+                                sheet = client.open("医療システム管理表").worksheet("シート1")
                                 st.success("✅ 接続成功！")
 
                                 data_to_write = st.session_state["results_data"]
