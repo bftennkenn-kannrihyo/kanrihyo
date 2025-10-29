@@ -154,8 +154,6 @@ with tabs[0]:
             st.download_button("CSVで保存", data=output.getvalue(),
                                file_name="filtered_data.csv", mime="text/csv")
 
-    st.info(f"🧾 書き込みデータ件数: {len(clean_df)}")
-    
     # --- Googleスプレッドシートへの上書き保存 ---
     if st.button("Googleスプレッドシートに上書き保存"):
         try:
