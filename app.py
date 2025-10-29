@@ -18,8 +18,6 @@ def read_excel(upload):
 
 def filter_dataframe(df):
     """各列で絞り込みフィルター"""
-    filters = {}
-    st.markdown("### 🔎 さらに絞り込み")
     for col in df.columns:
         col_type = df[col].dtype
         if pd.api.types.is_numeric_dtype(col_type):
@@ -64,7 +62,6 @@ with tabs[0]:
                 if "施設名" not in df.columns:
                     st.error("Excelに『施設名』という列が必要です。")
                 else:
-                    # 検索条件
                     if query.strip():
                         names = [n.strip() for n in query.splitlines() if n.strip()]
                         filtered = df[df["施設名"].isin(names)]
@@ -75,16 +72,17 @@ with tabs[0]:
                     st.subheader("📋 絞り込み前データ")
                     st.dataframe(results, use_container_width=True)
 
-                    # ▼ さらに絞り込み ▼
-                    refined = filter_dataframe(results)
-                    st.subheader("🔎 絞り込み後データ")
-                    st.dataframe(refined, use_container_width=True)
+                    # ▼「さらに絞り込み」セクションを必要時のみ表示
+                    with st.expander("🔎 さらに絞り込み（必要な時だけ開く）", expanded=False):
+                        refined = filter_dataframe(results)
+                        st.subheader("🔎 絞り込み後データ")
+                        st.dataframe(refined, use_container_width=True)
 
-                    # エクスポート
-                    output = BytesIO()
-                    refined.to_csv(output, index=False, encoding="utf-8-sig")
-                    st.download_button("CSVで保存", data=output.getvalue(),
-                                       file_name="filtered_data.csv", mime="text/csv")
+                        # エクスポート
+                        output = BytesIO()
+                        refined.to_csv(output, index=False, encoding="utf-8-sig")
+                        st.download_button("CSVで保存", data=output.getvalue(),
+                                           file_name="filtered_data.csv", mime="text/csv")
     else:
         st.info("まずExcelファイルをアップロードしてください。")
 
