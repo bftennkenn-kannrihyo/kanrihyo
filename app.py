@@ -82,105 +82,86 @@ def filter_dataframe(df):
 with tabs[0]:
     st.header("医療システム管理表")
 
-    # Excelファイルの読み込み
-    file = st.file_uploader("Excelファイルを選択", type=["xlsx"])
+    # --- ファイルアップロード（保持付き）---
+    uploaded_file = st.file_uploader("Excelファイルを選択", type=["xlsx"])
+    if uploaded_file is not None:
+        st.session_state["uploaded_file"] = uploaded_file
+
+    # --- セッションから再利用 ---
+    file = st.session_state.get("uploaded_file", None)
     df = read_excel(file) if file else None
 
     if df is not None:
         st.success(f"{len(df)}件のデータを読み込みました。")
 
-        # 施設名検索欄
+        # --- 検索 ---
         st.markdown("### 🔍 任意で施設名検索（空欄でもOK）")
         query = st.text_area("施設名をコピペ（1行1件）", height=150, placeholder="入力しなくても全件表示できます")
 
-        # 表示項目のチェックボックス
+        # --- 項目選択 ---
         st.markdown("### ✅ 表示する項目を選択（チェックした列のみ表示）")
         selected_fields = []
         cols = st.columns(min(5, len(df.columns)))
         for i, col in enumerate(df.columns):
             with cols[i % len(cols)]:
-                if st.checkbox(col, value=(col == "施設名")):
+                if st.checkbox(col, value=(col == "施設名"), key=f"col_{col}"):
                     selected_fields.append(col)
 
-        # データを表示ボタン
+        # --- データ表示 ---
         if st.button("データを表示"):
             if not selected_fields:
                 st.warning("少なくとも1つ項目を選択してください。")
+            elif "施設名" not in df.columns:
+                st.error("Excelに『施設名』という列が必要です。")
             else:
-                if "施設名" not in df.columns:
-                    st.error("Excelに『施設名』という列が必要です。")
+                # 絞り込み
+                if query.strip():
+                    names = [n.strip() for n in query.splitlines() if n.strip()]
+                    filtered = df[df["施設名"].isin(names)]
                 else:
-                    # 絞り込み処理
-                    if query.strip():
-                        names = [n.strip() for n in query.splitlines() if n.strip()]
-                        filtered = df[df["施設名"].isin(names)]
-                    else:
-                        filtered = df.copy()
+                    filtered = df.copy()
 
-                    results = filtered[selected_fields]
-                    st.subheader("📋 絞り込み前データ")
-                    st.dataframe(results, use_container_width=True)
+                results = filtered[selected_fields]
+                st.session_state["results"] = results  # ← ✅ 結果を保存
 
-                    # ▼ 必要なときだけ出る「さらに絞り込み」
-                    with st.expander("🔎 さらに絞り込み（必要な時だけ開く）", expanded=False):
-                        refined = filter_dataframe(results)
-                        st.subheader("🔎 絞り込み後データ")
-                        st.dataframe(refined, use_container_width=True)
+    # --- データ表示（ボタン後も保持）---
+    if "results" in st.session_state:
+        results = st.session_state["results"]
+        st.subheader("📋 絞り込み前データ")
+        st.dataframe(results, use_container_width=True)
 
-                        # CSV出力
-                        output = BytesIO()
-                        refined.to_csv(output, index=False, encoding="utf-8-sig")
-                        st.download_button(
-                            "CSVで保存",
-                            data=output.getvalue(),
-                            file_name="filtered_data.csv",
-                            mime="text/csv"
-                        )
+        # ▼ さらに絞り込み
+        with st.expander("🔎 さらに絞り込み（必要な時だけ開く）", expanded=False):
+            refined = filter_dataframe(results)
+            st.subheader("🔎 絞り込み後データ")
+            st.dataframe(refined, use_container_width=True)
 
-                    # ✅ Googleスプレッドシート連携部分
-                    st.markdown("### ☁️ Googleスプレッドシート連携")
+            # CSV出力
+            output = BytesIO()
+            refined.to_csv(output, index=False, encoding="utf-8-sig")
+            st.download_button("CSVで保存", data=output.getvalue(),
+                               file_name="filtered_data.csv", mime="text/csv")
 
-                    import gspread
-                    from google.oauth2.service_account import Credentials
+        # ☁️ Googleスプレッドシート保存
+        st.markdown("### ☁️ Googleスプレッドシート連携")
+        st.write("書き込み予定データ数:", len(results))
 
-                    def connect_to_gsheet():
-                        scope = [
-                            "https://www.googleapis.com/auth/spreadsheets",
-                            "https://www.googleapis.com/auth/drive"
-                        ]
-                        creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
-                        client = gspread.authorize(creds)
-                        return client
+        if st.button("Googleスプレッドシートに上書き保存"):
+            try:
+                st.info("🔄 スプレッドシートに接続中…")
+                client = connect_to_gsheet()
+                sheet = client.open("医療システム管理表").worksheet("シート1")
+                st.success("✅ 接続成功！")
 
-                    # --- 結果データをセッションに保存（あれば）---
-                    st.session_state["results_data"] = results
-                    st.write("書き込み予定データ数:", len(st.session_state["results_data"]))
+                sheet.clear()
+                sheet.update([results.columns.values.tolist()] + results.values.tolist())
+                st.success("✅ Googleスプレッドシートに上書き保存しました！")
 
-                    # ✅ 上書き保存ボタン
-                    if st.button("Googleスプレッドシートに上書き保存"):
-                        try:
-                            st.info("🔄 スプレッドシートに接続中…")
-                            client = connect_to_gsheet()
-                            sheet = client.open("医療システム管理表").worksheet("シート1")
-                            st.success("✅ 接続成功！")
-                    
-                            data_to_write = st.session_state["results_data"]
-                            st.info(f"📄 書き込みデータ数: {len(data_to_write)} 件")
-                    
-                            if len(data_to_write) > 0:
-                                st.info("📡 Googleスプレッドシート接続完了 — 書き込み準備OK")
-                                sheet.clear()
-                                st.info("🧹 既存データをクリアしました。")
-                                sheet.update([data_to_write.columns.values.tolist()] + data_to_write.values.tolist())
-                                st.success("✅ Googleスプレッドシートに上書き保存しました！")
-                            else:
-                                st.warning("⚠️ 書き込むデータがありません。")
-                    
-                        except Exception as e:
-                            st.error(f"❌ エラーが発生しました: {e}")
+            except Exception as e:
+                st.error(f"❌ エラーが発生しました: {e}")
 
     else:
-        st.info("まずExcelファイルをアップロードしてください。")
+        st.info("まずExcelファイルをアップロードして『データを表示』を押してください。")
 
 # ▼ 生体タブ（同じ構成にあとで拡張可能）
 with tabs[1]:
