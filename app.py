@@ -14,6 +14,29 @@ def read_excel(upload):
         return None
     df = pd.read_excel(upload)
     df.columns = [c.strip() for c in df.columns]
+
+    # ▼ Excelシリアル日付を自動変換＋曜日追加
+    for col in df.columns:
+        # 数値で日付範囲の可能性あり（例：40000〜60000）
+        if pd.api.types.is_numeric_dtype(df[col]):
+            if df[col].between(40000, 60000).any():
+                try:
+                    dt_series = pd.to_datetime("1899-12-30") + pd.to_timedelta(df[col], unit="D")
+                    weekdays = ["月", "火", "水", "木", "金", "土", "日"]
+                    df[col] = dt_series.dt.strftime("%Y-%m-%d") + "（" + dt_series.dt.dayofweek.map(lambda i: weekdays[i]) + "）"
+                except Exception:
+                    pass
+        # 文字列でも日付形式っぽければ変換＋曜日追加
+        elif df[col].dtype == object:
+            df[col] = df[col].astype(str).str.replace(".", "-").str.replace("/", "-")
+            try:
+                dt_series = pd.to_datetime(df[col], errors="coerce")
+                mask = dt_series.notna()
+                weekdays = ["月", "火", "水", "木", "金", "土", "日"]
+                df.loc[mask, col] = dt_series[mask].dt.strftime("%Y-%m-%d") + "（" + dt_series[mask].dt.dayofweek.map(lambda i: weekdays[i]) + "）"
+            except Exception:
+                pass
+
     return df
 
 def filter_dataframe(df):
