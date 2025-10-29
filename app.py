@@ -24,46 +24,45 @@ with tabs[0]:
 
     if df is not None:
         st.success(f"{len(df)}件のデータを読み込みました。")
-        st.dataframe(df.head(5), use_container_width=True)
 
-        st.markdown("### 🔍 施設名検索")
-        col1, col2 = st.columns([4,1])
-        with col1:
-            query = st.text_area("施設名をコピペ（1行1件）", height=150, label_visibility="collapsed")
-        with col2:
-            st.write("")  # 余白
-            st.write("")  # 検索ボタンを縦中央に寄せる
-            search_clicked = st.button("検索", use_container_width=True)
+        st.markdown("### 🔍 任意で施設名検索（空欄でもOK）")
+        query = st.text_area("施設名をコピペ（1行1件）", height=150, placeholder="ここに入力しなくても全件表示できます")
 
-        # チェックボックス：横並び
-        st.markdown("**表示する項目を選択**")
+        st.markdown("### ✅ 表示する項目を選択（チェックした列のみ表示）")
         selected_fields = []
-        cols = st.columns(min(5, len(df.columns)))  # 最大5列で横並び
+        cols = st.columns(min(5, len(df.columns)))  # 最大5列ずつ横並び
         for i, col in enumerate(df.columns):
             with cols[i % len(cols)]:
                 if st.checkbox(col, value=(col == "施設名")):
                     selected_fields.append(col)
 
-        if search_clicked:
-            if "施設名" not in df.columns:
-                st.error("Excelに『施設名』という列が必要です。")
-            elif not query.strip():
-                st.warning("検索したい施設名を入力してください。")
-            elif not selected_fields:
+        # 表示ボタン
+        if st.button("データを表示"):
+            # 条件に応じてフィルター処理
+            if not selected_fields:
                 st.warning("少なくとも1つ項目を選択してください。")
             else:
-                names = [n.strip() for n in query.splitlines() if n.strip()]
-                results = df[df["施設名"].isin(names)][selected_fields]
-                st.dataframe(results, use_container_width=True)
-                # エクスポート
-                output = BytesIO()
-                results.to_csv(output, index=False, encoding="utf-8-sig")
-                st.download_button("検索結果をCSVで保存", data=output.getvalue(),
-                                   file_name="search_result.csv", mime="text/csv")
-    else:
-        st.info("Excelファイルをアップロードしてください。")
+                if "施設名" not in df.columns:
+                    st.error("Excelに『施設名』という列が必要です。")
+                else:
+                    if query.strip():
+                        names = [n.strip() for n in query.splitlines() if n.strip()]
+                        filtered = df[df["施設名"].isin(names)]
+                    else:
+                        filtered = df.copy()
 
-# 生体タブ（後で同じ構成にできます）
+                    results = filtered[selected_fields]
+                    st.dataframe(results, use_container_width=True)
+
+                    # エクスポート
+                    output = BytesIO()
+                    results.to_csv(output, index=False, encoding="utf-8-sig")
+                    st.download_button("CSVで保存", data=output.getvalue(),
+                                       file_name="filtered_data.csv", mime="text/csv")
+    else:
+        st.info("まずExcelファイルをアップロードしてください。")
+
+# 生体タブ（後で同様に追加）
 with tabs[1]:
     st.header("生体システム管理表")
     st.info("ここも後で医療タブと同じ構成にします。")
@@ -71,13 +70,13 @@ with tabs[1]:
 # カレンダータブ
 with tabs[2]:
     st.header("📅 点検スケジュール生成")
-    hospitals_text = st.text_area("施設名（Excelからコピペ）", height=200)
+    facilities_text = st.text_area("施設名（Excelからコピペ）", height=200)
     if st.button("スケジュールを生成"):
-        hospitals = [h.strip() for h in hospitals_text.splitlines() if h.strip()]
+        facilities = [h.strip() for h in facilities_text.splitlines() if h.strip()]
         today = datetime.today().replace(day=1)
         schedule = []
         day = today
-        for h in hospitals:
+        for h in facilities:
             while day.weekday() >= 5:
                 day += timedelta(days=1)
             schedule.append({"日付": day.strftime("%Y-%m-%d"), "施設名": h})
