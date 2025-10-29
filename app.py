@@ -17,8 +17,7 @@ def read_excel(upload):
     return df
 
 def filter_dataframe(df):
-    """列ごとに絞り込みを追加"""
-    st.markdown("### 🔎 さらに絞り込み条件を設定")
+    """各列で絞り込みフィルター"""
     for col in df.columns:
         col_type = df[col].dtype
         if pd.api.types.is_numeric_dtype(col_type):
@@ -27,15 +26,14 @@ def filter_dataframe(df):
             df = df[df[col].between(f_min, f_max)]
         else:
             unique_vals = df[col].dropna().unique().tolist()
-            if len(unique_vals) <= 30:
-                selected = st.multiselect(f"{col} の値を選択", unique_vals, default=unique_vals)
+            if len(unique_vals) <= 30:  # 候補が少ない場合は選択ボックス
+                selected = st.multiselect(f"{col} を選択", unique_vals, default=unique_vals)
                 df = df[df[col].isin(selected)]
             else:
                 keyword = st.text_input(f"{col} に含まれる文字を検索")
                 if keyword:
                     df = df[df[col].astype(str).str.contains(keyword, case=False, na=False)]
     return df
-
 
 # 医療タブ
 with tabs[0]:
@@ -49,15 +47,13 @@ with tabs[0]:
         st.markdown("### 🔍 任意で施設名検索（空欄でもOK）")
         query = st.text_area("施設名をコピペ（1行1件）", height=150, placeholder="入力しなくても全件表示できます")
 
-        st.markdown("### ✅ 表示する項目を選択")
+        st.markdown("### ✅ 表示する項目を選択（チェックした列のみ表示）")
         selected_fields = []
         cols = st.columns(min(5, len(df.columns)))
         for i, col in enumerate(df.columns):
             with cols[i % len(cols)]:
                 if st.checkbox(col, value=(col == "施設名")):
                     selected_fields.append(col)
-
-        use_filter = st.checkbox("🔎 絞り込み機能を使う")
 
         if st.button("データを表示"):
             if not selected_fields:
@@ -66,7 +62,6 @@ with tabs[0]:
                 if "施設名" not in df.columns:
                     st.error("Excelに『施設名』という列が必要です。")
                 else:
-                    # 検索条件
                     if query.strip():
                         names = [n.strip() for n in query.splitlines() if n.strip()]
                         filtered = df[df["施設名"].isin(names)]
@@ -74,30 +69,24 @@ with tabs[0]:
                         filtered = df.copy()
 
                     results = filtered[selected_fields]
-                    st.subheader("📋 データ表示")
+                    st.subheader("📋 絞り込み前データ")
                     st.dataframe(results, use_container_width=True)
 
-                    # ✅ 絞り込み機能がONの時だけフィルターUIを出す
-                    if use_filter:
+                    # ▼「さらに絞り込み」セクションを必要時のみ表示
+                    with st.expander("🔎 さらに絞り込み（必要な時だけ開く）", expanded=False):
                         refined = filter_dataframe(results)
                         st.subheader("🔎 絞り込み後データ")
                         st.dataframe(refined, use_container_width=True)
 
-                        # CSVエクスポート
+                        # エクスポート
                         output = BytesIO()
                         refined.to_csv(output, index=False, encoding="utf-8-sig")
-                        st.download_button("絞り込み後データをCSVで保存", data=output.getvalue(),
+                        st.download_button("CSVで保存", data=output.getvalue(),
                                            file_name="filtered_data.csv", mime="text/csv")
-                    else:
-                        # 通常出力
-                        output = BytesIO()
-                        results.to_csv(output, index=False, encoding="utf-8-sig")
-                        st.download_button("表示データをCSVで保存", data=output.getvalue(),
-                                           file_name="display_data.csv", mime="text/csv")
     else:
         st.info("まずExcelファイルをアップロードしてください。")
 
-# 生体タブ（後で同じ構成にできます）
+# 生体タブ（後で同様に追加）
 with tabs[1]:
     st.header("生体システム管理表")
     st.info("ここも後で医療タブと同じ構成にします。")
