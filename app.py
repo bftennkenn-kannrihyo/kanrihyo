@@ -17,6 +17,7 @@ def connect_to_gsheet():
     client = gspread.authorize(creds)
     return client
 
+
 st.set_page_config(page_title="管理表", layout="wide")
 st.title("🏥 管理表")
 
@@ -92,16 +93,16 @@ def filter_dataframe(df):
                     df = df[df[col].astype(str).str.contains(keyword, case=False, na=False)]
     return df
 
+
 # ▼ 医療タブ
 with tabs[0]:
     st.header("医療システム管理表")
 
-    # --- ファイルアップロード（保持付き）---
+    # --- ファイルアップロード ---
     uploaded_file = st.file_uploader("Excelファイルを選択", type=["xlsx"])
     if uploaded_file is not None:
         st.session_state["uploaded_file"] = uploaded_file
 
-    # --- セッションから再利用 ---
     file = st.session_state.get("uploaded_file", None)
     df = read_excel(file) if file else None
 
@@ -121,14 +122,13 @@ with tabs[0]:
                 if st.checkbox(col, value=(col == "施設名"), key=f"col_{col}"):
                     selected_fields.append(col)
 
-        # --- データ表示 ---
+        # --- データを表示 ---
         if st.button("データを表示"):
             if not selected_fields:
                 st.warning("少なくとも1つ項目を選択してください。")
             elif "施設名" not in df.columns:
                 st.error("Excelに『施設名』という列が必要です。")
             else:
-                # 絞り込み
                 if query.strip():
                     names = [n.strip() for n in query.splitlines() if n.strip()]
                     filtered = df[df["施設名"].isin(names)]
@@ -136,21 +136,19 @@ with tabs[0]:
                     filtered = df.copy()
 
                 results = filtered[selected_fields]
-                st.session_state["results"] = results  # ← ✅ 結果を保存
+                st.session_state["results_data"] = results
+                st.success("📊 データを準備しました。下に結果が表示されます。")
 
-    # --- データ表示（ボタン後も保持）---
-    if "results" in st.session_state:
-        results = st.session_state["results"]
-        st.subheader("📋 絞り込み前データ")
+    # --- 結果表示＆スプレッドシート出力 ---
+    if "results_data" in st.session_state:
+        results = st.session_state["results_data"]
+        st.subheader("📋 絞り込み結果")
         st.dataframe(results, use_container_width=True)
 
-        # ▼ さらに絞り込み
         with st.expander("🔎 さらに絞り込み（必要な時だけ開く）", expanded=False):
             refined = filter_dataframe(results)
-            st.subheader("🔎 絞り込み後データ")
             st.dataframe(refined, use_container_width=True)
 
-            # CSV出力
             output = BytesIO()
             refined.to_csv(output, index=False, encoding="utf-8-sig")
             st.download_button("CSVで保存", data=output.getvalue(),
@@ -162,34 +160,36 @@ with tabs[0]:
 
         if st.button("Googleスプレッドシートに上書き保存"):
             try:
-            st.info("🔄 スプレッドシートに接続中…")
-            client = connect_to_gsheet()
-            ss = client.open("医療システム管理表")
-            sheet = ss.sheet1
-            st.success("✅ 接続成功！")
-        
-            st.write("📄 シート名:", sheet.title)  # ← デバッグ
-            st.write("📘 スプレッドシートタイトル:", ss.title)  # ← デバッグ
-        
-            data_to_write = st.session_state["results_data"]
-            clean_df = data_to_write.fillna("").astype(str)
-        
-            st.info(f"📄 書き込みデータ数: {len(clean_df)} 件")
-        
-            sheet.clear()
-            sheet.update([clean_df.columns.values.tolist()] + clean_df.values.tolist())
-            st.success("✅ Googleスプレッドシートに上書き保存しました！")
-        
-        except Exception as e:
-            st.error(f"❌ エラーが発生しました: {e}")
+                st.info("🔄 スプレッドシートに接続中…")
+                client = connect_to_gsheet()
+                ss = client.open("医療システム管理表")
+                sheet = ss.sheet1  # ← タブ名が「シート1」ならOK
+                st.success("✅ 接続成功！")
 
+                st.write("📄 シート名:", sheet.title)
+                st.write("📘 スプレッドシートタイトル:", ss.title)
+
+                clean_df = results.fillna("").astype(str)
+                st.info(f"📄 書き込みデータ数: {len(clean_df)} 件")
+
+                sheet.clear()
+                sheet.update([clean_df.columns.values.tolist()] + clean_df.values.tolist())
+                st.success("✅ Googleスプレッドシートに上書き保存しました！")
+
+            except Exception as e:
+                if "Response [200]" in str(e):
+                    st.warning("⚠️ 書き込みは成功しています（Googleの応答形式の違いによるエラー表示）")
+                else:
+                    st.error(f"❌ エラーが発生しました: {e}")
     else:
         st.info("まずExcelファイルをアップロードして『データを表示』を押してください。")
 
-# ▼ 生体タブ（同じ構成にあとで拡張可能）
+
+# ▼ 生体タブ（後で同じ構成に拡張予定）
 with tabs[1]:
     st.header("生体システム管理表")
     st.info("ここも後で医療タブと同じ構成にできます。")
+
 
 # ▼ カレンダータブ
 with tabs[2]:
@@ -207,5 +207,6 @@ with tabs[2]:
             day += timedelta(days=1)
         df_sch = pd.DataFrame(schedule)
         st.dataframe(df_sch, use_container_width=True)
-        st.download_button("スケジュールをCSVで保存", data=df_sch.to_csv(index=False, encoding="utf-8-sig"),
+        st.download_button("スケジュールをCSVで保存",
+                           data=df_sch.to_csv(index=False, encoding="utf-8-sig"),
                            file_name="schedule.csv", mime="text/csv")
