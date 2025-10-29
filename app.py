@@ -3,6 +3,20 @@ import pandas as pd
 from io import BytesIO
 from datetime import datetime, timedelta
 
+# ▼ Googleスプレッドシート接続関数
+import gspread
+from google.oauth2.service_account import Credentials
+
+def connect_to_gsheet():
+    """Googleスプレッドシートに接続"""
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
+    client = gspread.authorize(creds)
+    return client
+
 st.set_page_config(page_title="管理表", layout="wide")
 st.title("🏥 管理表")
 
