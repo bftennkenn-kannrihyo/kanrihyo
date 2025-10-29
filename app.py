@@ -8,16 +8,16 @@ st.title("🏥 管理表")
 
 tabs = st.tabs(["医療", "生体", "カレンダー"])
 
-# 共通関数
+# ▼ Excel読み込み関数（シリアル日付変換＋曜日付き）
 def read_excel(upload):
     if upload is None:
         return None
     df = pd.read_excel(upload)
     df.columns = [c.strip() for c in df.columns]
 
-    # ▼ Excelシリアル日付を自動変換＋曜日追加
+    # Excel日付変換＋曜日追加
     for col in df.columns:
-        # 数値で日付範囲の可能性あり（例：40000〜60000）
+        # 数値型（Excelシリアル値）の場合
         if pd.api.types.is_numeric_dtype(df[col]):
             if df[col].between(40000, 60000).any():
                 try:
@@ -26,7 +26,7 @@ def read_excel(upload):
                     df[col] = dt_series.dt.strftime("%Y-%m-%d") + "（" + dt_series.dt.dayofweek.map(lambda i: weekdays[i]) + "）"
                 except Exception:
                     pass
-        # 文字列でも日付形式っぽければ変換＋曜日追加
+        # 文字列型（"2025/4/2"など）の場合
         elif df[col].dtype == object:
             df[col] = df[col].astype(str).str.replace(".", "-").str.replace("/", "-")
             try:
@@ -36,9 +36,9 @@ def read_excel(upload):
                 df.loc[mask, col] = dt_series[mask].dt.strftime("%Y-%m-%d") + "（" + dt_series[mask].dt.dayofweek.map(lambda i: weekdays[i]) + "）"
             except Exception:
                 pass
-
     return df
 
+# ▼ データフィルタリング関数
 def filter_dataframe(df):
     """各列で絞り込みフィルター"""
     for col in df.columns:
@@ -49,7 +49,7 @@ def filter_dataframe(df):
             df = df[df[col].between(f_min, f_max)]
         else:
             unique_vals = df[col].dropna().unique().tolist()
-            if len(unique_vals) <= 30:  # 候補が少ない場合は選択ボックス
+            if len(unique_vals) <= 30:
                 selected = st.multiselect(f"{col} を選択", unique_vals, default=unique_vals)
                 df = df[df[col].isin(selected)]
             else:
@@ -58,7 +58,7 @@ def filter_dataframe(df):
                     df = df[df[col].astype(str).str.contains(keyword, case=False, na=False)]
     return df
 
-# 医療タブ
+# ▼ 医療タブ
 with tabs[0]:
     st.header("医療システム管理表")
     file = st.file_uploader("Excelファイルを選択", type=["xlsx"])
@@ -95,13 +95,13 @@ with tabs[0]:
                     st.subheader("📋 絞り込み前データ")
                     st.dataframe(results, use_container_width=True)
 
-                    # ▼「さらに絞り込み」セクションを必要時のみ表示
+                    # ▼ 必要なときだけ出る「さらに絞り込み」
                     with st.expander("🔎 さらに絞り込み（必要な時だけ開く）", expanded=False):
                         refined = filter_dataframe(results)
                         st.subheader("🔎 絞り込み後データ")
                         st.dataframe(refined, use_container_width=True)
 
-                        # エクスポート
+                        # CSV出力
                         output = BytesIO()
                         refined.to_csv(output, index=False, encoding="utf-8-sig")
                         st.download_button("CSVで保存", data=output.getvalue(),
@@ -109,12 +109,12 @@ with tabs[0]:
     else:
         st.info("まずExcelファイルをアップロードしてください。")
 
-# 生体タブ（後で同様に追加）
+# ▼ 生体タブ（同じ構成にあとで拡張可能）
 with tabs[1]:
     st.header("生体システム管理表")
-    st.info("ここも後で医療タブと同じ構成にします。")
+    st.info("ここも後で医療タブと同じ構成にできます。")
 
-# カレンダータブ
+# ▼ カレンダータブ
 with tabs[2]:
     st.header("📅 点検スケジュール生成")
     facilities_text = st.text_area("施設名（Excelからコピペ）", height=200)
@@ -126,7 +126,7 @@ with tabs[2]:
         for h in facilities:
             while day.weekday() >= 5:
                 day += timedelta(days=1)
-            schedule.append({"日付": day.strftime("%Y-%m-%d"), "施設名": h})
+            schedule.append({"日付": day.strftime("%Y-%m-%d（%a）"), "施設名": h})
             day += timedelta(days=1)
         df_sch = pd.DataFrame(schedule)
         st.dataframe(df_sch, use_container_width=True)
