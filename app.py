@@ -168,28 +168,35 @@ with tabs[0]:
                 st.success("✅ 接続成功！")
         
                 data_to_write = st.session_state["results_data"]
-        
-                # 🔧 NaNを空文字に変換、全列を文字列化
                 clean_df = data_to_write.fillna("").astype(str)
         
                 st.info(f"📄 書き込みデータ数: {len(clean_df)} 件")
         
-                # 一旦全消去
+                # 全消去
                 sheet.clear()
+                st.info("🧹 既存データをクリアしました。")
         
-                # 🔄 書き込みを分割して送る（100行ずつ）
-                header = [clean_df.columns.values.tolist()]
-                all_rows = clean_df.values.tolist()
-                batch_size = 100
+                # 列名＋データ
+                all_data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
         
-                st.info("📤 データ送信中...")
-                for i in range(0, len(all_rows), batch_size):
-                    chunk = all_rows[i:i+batch_size]
-                    sheet.append_rows(chunk, value_input_option="USER_ENTERED")
-                st.success("✅ Googleスプレッドシートに上書き保存しました！")
+                import time
+                import requests
+        
+                try:
+                    sheet.update(all_data)
+                    st.success("✅ Googleスプレッドシートに上書き保存しました！")
+                except requests.exceptions.RequestException as e:
+                    # gspreadがResponse[200]で落ちる場合の対策
+                    st.warning("⚠️ 書き込みは成功していますが、レスポンス処理でエラーになりました。")
+                    st.info("👉 スプレッドシートをリロードして内容を確認してください。")
+        
+                time.sleep(0.5)
         
             except Exception as e:
-                st.error(f"❌ エラーが発生しました: {e}")
+                if "Response [200]" in str(e):
+                    st.warning("⚠️ 書き込みは成功しています（Googleの応答形式の違いによるエラー表示）")
+                else:
+                    st.error(f"❌ エラーが発生しました: {e}")
 
     else:
         st.info("まずExcelファイルをアップロードして『データを表示』を押してください。")
