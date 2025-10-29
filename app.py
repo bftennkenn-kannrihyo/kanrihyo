@@ -81,15 +81,19 @@ def filter_dataframe(df):
 # ▼ 医療タブ
 with tabs[0]:
     st.header("医療システム管理表")
+
+    # Excelファイルの読み込み
     file = st.file_uploader("Excelファイルを選択", type=["xlsx"])
     df = read_excel(file) if file else None
 
     if df is not None:
         st.success(f"{len(df)}件のデータを読み込みました。")
 
+        # 施設名検索欄
         st.markdown("### 🔍 任意で施設名検索（空欄でもOK）")
         query = st.text_area("施設名をコピペ（1行1件）", height=150, placeholder="入力しなくても全件表示できます")
 
+        # 表示項目のチェックボックス
         st.markdown("### ✅ 表示する項目を選択（チェックした列のみ表示）")
         selected_fields = []
         cols = st.columns(min(5, len(df.columns)))
@@ -98,6 +102,7 @@ with tabs[0]:
                 if st.checkbox(col, value=(col == "施設名")):
                     selected_fields.append(col)
 
+        # データを表示ボタン
         if st.button("データを表示"):
             if not selected_fields:
                 st.warning("少なくとも1つ項目を選択してください。")
@@ -105,6 +110,7 @@ with tabs[0]:
                 if "施設名" not in df.columns:
                     st.error("Excelに『施設名』という列が必要です。")
                 else:
+                    # 絞り込み処理
                     if query.strip():
                         names = [n.strip() for n in query.splitlines() if n.strip()]
                         filtered = df[df["施設名"].isin(names)]
@@ -124,33 +130,41 @@ with tabs[0]:
                         # CSV出力
                         output = BytesIO()
                         refined.to_csv(output, index=False, encoding="utf-8-sig")
-                        st.download_button("CSVで保存", data=output.getvalue(),
-                                           file_name="filtered_data.csv", mime="text/csv")
-                        import gspread
-                        from google.oauth2.service_account import Credentials
-                        
-                        def connect_to_gsheet():
-                            scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-                            creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
-                            client = gspread.authorize(creds)
-                            return client
-                        
-                        
-                        # ✅ Googleスプレッドシートに上書き保存ボタン
-                        if st.button("Googleスプレッドシートに上書き保存"):
-                            try:
-                                client = connect_to_gsheet()
-                                # ⚙️ あなたのスプレッドシート名を指定
-                                sheet = client.open("医療システム管理表").sheet1  
-                                # スプレッドシートを一旦クリアして、最新データを上書き
-                                sheet.clear()
-                                sheet.update([refined.columns.values.tolist()] + refined.values.tolist())
-                                st.success("✅ Googleスプレッドシートに上書き保存しました！")
-                            except Exception as e:
-                                st.error(f"❌ エラーが発生しました: {e}")
+                        st.download_button(
+                            "CSVで保存",
+                            data=output.getvalue(),
+                            file_name="filtered_data.csv",
+                            mime="text/csv"
+                        )
+
+                    # ✅ Googleスプレッドシート連携部分
+                    st.markdown("### ☁️ Googleスプレッドシート連携")
+                    import gspread
+                    from google.oauth2.service_account import Credentials
+
+                    def connect_to_gsheet():
+                        scope = [
+                            "https://www.googleapis.com/auth/spreadsheets",
+                            "https://www.googleapis.com/auth/drive"
+                        ]
+                        creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
+                        client = gspread.authorize(creds)
+                        return client
+
+                    # スプレッドシート上書き保存ボタン
+                    if st.button("Googleスプレッドシートに上書き保存"):
+                        try:
+                            client = connect_to_gsheet()
+                            sheet = client.open("医療システム管理表").sheet1  # スプレッドシート名
+                            sheet.clear()
+                            sheet.update([results.columns.values.tolist()] + results.values.tolist())
+                            st.success("✅ Googleスプレッドシートに上書き保存しました！")
+                        except Exception as e:
+                            st.error(f"❌ エラーが発生しました: {e}")
 
     else:
         st.info("まずExcelファイルをアップロードしてください。")
+
 
 # ▼ 生体タブ（同じ構成にあとで拡張可能）
 with tabs[1]:
