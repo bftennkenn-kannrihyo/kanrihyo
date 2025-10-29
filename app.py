@@ -12,30 +12,50 @@ tabs = st.tabs(["医療", "生体", "カレンダー"])
 def read_excel(upload):
     if upload is None:
         return None
-    df = pd.read_excel(upload)
+    df = pd.read_excel(upload, dtype=str)
     df.columns = [c.strip() for c in df.columns]
 
-    # Excel日付変換＋曜日追加
+    target_cols = ["点検確定日", "前回点検日"]  # 対象の列だけ変換
+
     for col in df.columns:
-        # 数値型（Excelシリアル値）の場合
-        if pd.api.types.is_numeric_dtype(df[col]):
-            if df[col].between(40000, 60000).any():
-                try:
-                    dt_series = pd.to_datetime("1899-12-30") + pd.to_timedelta(df[col], unit="D")
-                    weekdays = ["月", "火", "水", "木", "金", "土", "日"]
-                    df[col] = dt_series.dt.strftime("%Y-%m-%d") + "（" + dt_series.dt.dayofweek.map(lambda i: weekdays[i]) + "）"
-                except Exception:
-                    pass
-        # 文字列型（"2025/4/2"など）の場合
-        elif df[col].dtype == object:
-            df[col] = df[col].astype(str).str.replace(".", "-").str.replace("/", "-")
+        if col not in target_cols:
+            continue  # 他の列はスキップ
+
+        converted = []
+        for val in df[col]:
+            if pd.isna(val) or str(val).strip() == "":
+                converted.append("")
+                continue
+
+            val_str = str(val).strip()
+
+            # Excelシリアル値（例：45749）
+            if val_str.replace(".", "", 1).isdigit():
+                num = float(val_str)
+                if 30000 < num < 80000:
+                    try:
+                        dt = pd.to_datetime("1899-12-30") + pd.to_timedelta(num, unit="D")
+                        weekdays = ["月", "火", "水", "木", "金", "土", "日"]
+                        converted.append(dt.strftime("%Y-%m-%d") + f"（{weekdays[dt.weekday()]}）")
+                        continue
+                    except Exception:
+                        pass
+
+            # 通常の日付文字列（例：2025/4/2, 4月2日など）
             try:
-                dt_series = pd.to_datetime(df[col], errors="coerce")
-                mask = dt_series.notna()
-                weekdays = ["月", "火", "水", "木", "金", "土", "日"]
-                df.loc[mask, col] = dt_series[mask].dt.strftime("%Y-%m-%d") + "（" + dt_series[mask].dt.dayofweek.map(lambda i: weekdays[i]) + "）"
+                dt = pd.to_datetime(val_str, errors="coerce")
+                if pd.notna(dt):
+                    weekdays = ["月", "火", "水", "木", "金", "土", "日"]
+                    converted.append(dt.strftime("%Y-%m-%d") + f"（{weekdays[dt.weekday()]}）")
+                    continue
             except Exception:
                 pass
+
+            # 変換できなければ元のまま
+            converted.append(val_str)
+
+        df[col] = converted
+
     return df
 
 # ▼ データフィルタリング関数
