@@ -166,11 +166,28 @@ with tabs[0]:
                 client = connect_to_gsheet()
                 sheet = client.open("医療システム管理表").worksheet("シート1")
                 st.success("✅ 接続成功！")
-
+        
+                data_to_write = st.session_state["results_data"]
+        
+                # 🔧 NaNを空文字に変換、全列を文字列化
+                clean_df = data_to_write.fillna("").astype(str)
+        
+                st.info(f"📄 書き込みデータ数: {len(clean_df)} 件")
+        
+                # 一旦全消去
                 sheet.clear()
-                sheet.update([results.columns.values.tolist()] + results.values.tolist())
+        
+                # 🔄 書き込みを分割して送る（100行ずつ）
+                header = [clean_df.columns.values.tolist()]
+                all_rows = clean_df.values.tolist()
+                batch_size = 100
+        
+                st.info("📤 データ送信中...")
+                for i in range(0, len(all_rows), batch_size):
+                    chunk = all_rows[i:i+batch_size]
+                    sheet.append_rows(chunk, value_input_option="USER_ENTERED")
                 st.success("✅ Googleスプレッドシートに上書き保存しました！")
-
+        
             except Exception as e:
                 st.error(f"❌ エラーが発生しました: {e}")
 
