@@ -154,33 +154,33 @@ with tabs[0]:
             st.download_button("CSVで保存", data=output.getvalue(),
                                file_name="filtered_data.csv", mime="text/csv")
 
-        # ☁️ Googleスプレッドシート保存
-        st.markdown("### ☁️ Googleスプレッドシート連携")
-        st.write("書き込み予定データ数:", len(results))
+    # --- Googleスプレッドシートへの上書き保存 ---
+    if st.button("Googleスプレッドシートに上書き保存"):
+        try:
+            st.info("🔄 スプレッドシートに接続中…")
+            client = connect_to_gsheet()
+            ss = client.open("医療システム管理表")
+    
+            # 👇 タブ名を正確に書く
+            sheet = ss.worksheet("シート1")  # ←タブ名に合わせて変更！（例："Sheet1" や "医療"）
+    
+            st.success("✅ 接続成功！")
+            st.write("📘 スプレッドシートタイトル:", ss.title)
+            st.write("📄 シート名:", sheet.title)
+    
+            data_to_write = st.session_state["results"]
+            clean_df = data_to_write.fillna("").astype(str)
+    
+            st.info(f"📄 書き込みデータ数: {len(clean_df)} 件")
+    
+            sheet.clear()
+            sheet.update([clean_df.columns.values.tolist()] + clean_df.values.tolist())
+    
+            st.success("✅ Googleスプレッドシートに上書き保存しました！")
+    
+        except Exception as e:
+            st.error(f"❌ エラーが発生しました: {e}")
 
-        if st.button("Googleスプレッドシートに上書き保存"):
-            try:
-                st.info("🔄 スプレッドシートに接続中…")
-                client = connect_to_gsheet()
-                ss = client.open("医療システム管理表")
-                sheet = ss.sheet1  # ← タブ名が「シート1」ならOK
-                st.success("✅ 接続成功！")
-
-                st.write("📄 シート名:", sheet.title)
-                st.write("📘 スプレッドシートタイトル:", ss.title)
-
-                clean_df = results.fillna("").astype(str)
-                st.info(f"📄 書き込みデータ数: {len(clean_df)} 件")
-
-                sheet.clear()
-                sheet.update([clean_df.columns.values.tolist()] + clean_df.values.tolist())
-                st.success("✅ Googleスプレッドシートに上書き保存しました！")
-
-            except Exception as e:
-                if "Response [200]" in str(e):
-                    st.warning("⚠️ 書き込みは成功しています（Googleの応答形式の違いによるエラー表示）")
-                else:
-                    st.error(f"❌ エラーが発生しました: {e}")
     else:
         st.info("まずExcelファイルをアップロードして『データを表示』を押してください。")
 
