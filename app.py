@@ -160,23 +160,29 @@ with tabs[0]:
             st.info("🔄 スプレッドシートに接続中…")
             client = connect_to_gsheet()
             ss = client.open("医療システム管理表")
-    
-            # 👇 タブ名を正確に書く
-            sheet = ss.worksheet("シート1")  # ←タブ名に合わせて変更！（例："Sheet1" や "医療"）
+            sheet = ss.worksheet("シート1")  # ←タブ名に合わせて変更！
     
             st.success("✅ 接続成功！")
             st.write("📘 スプレッドシートタイトル:", ss.title)
             st.write("📄 シート名:", sheet.title)
     
+            # 書き込みデータ準備
             data_to_write = st.session_state["results"]
             clean_df = data_to_write.fillna("").astype(str)
-    
             st.info(f"📄 書き込みデータ数: {len(clean_df)} 件")
     
+            # スプレッドシートの内容を全削除
             sheet.clear()
-            sheet.update([clean_df.columns.values.tolist()] + clean_df.values.tolist())
     
-            st.success("✅ Googleスプレッドシートに上書き保存しました！")
+            # 行データを一括書き込み（例外時に再試行）
+            rows = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
+            try:
+                sheet.update(rows, value_input_option="USER_ENTERED")
+                st.success("✅ Googleスプレッドシートに上書き保存しました！")
+            except Exception as e:
+                st.warning(f"⚠️ 1回目失敗（{e}）→ 再試行します…")
+                sheet.update(rows, value_input_option="RAW")
+                st.success("✅ 再試行で書き込み成功しました！")
     
         except Exception as e:
             st.error(f"❌ エラーが発生しました: {e}")
