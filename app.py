@@ -155,22 +155,22 @@ with tabs[0]:
 
                     # スプレッドシート上書き保存ボタン
                     if st.button("Googleスプレッドシートに上書き保存"):
-                    try:
-                        st.info("🔄 スプレッドシートに接続中…")
-                        client = connect_to_gsheet()
-                        sheet = client.open("医療システム管理表").sheet1
-                        st.success("✅ 接続成功！")
-                
-                        st.info(f"📄 書き込みデータ数: {len(results)} 件")
-                        if len(results) == 0:
-                            st.warning("⚠️ 書き込むデータがありません。絞り込み結果を確認してください。")
-                        else:
-                            sheet.clear()
-                            sheet.update([results.columns.values.tolist()] + results.values.tolist())
-                            st.success("✅ Googleスプレッドシートに上書き保存しました！")
-                
-                    except Exception as e:
-                        st.error(f"❌ エラーが発生しました: {e}")
+                        try:
+                            st.info("🔄 スプレッドシートに接続中…")
+                            client = connect_to_gsheet()
+                            sheet = client.open("医療システム管理表").sheet1
+                            st.success("✅ 接続成功！")
+                    
+                            st.info(f"📄 書き込みデータ数: {len(results)} 件")
+                            if len(results) == 0:
+                                st.warning("⚠️ 書き込むデータがありません。絞り込み結果を確認してください。")
+                            else:
+                                sheet.clear()
+                                sheet.update([results.columns.values.tolist()] + results.values.tolist())
+                                st.success("✅ Googleスプレッドシートに上書き保存しました！")
+                    
+                        except Exception as e:
+                            st.error(f"❌ エラーが発生しました: {e}")
 
     else:
         st.info("まずExcelファイルをアップロードしてください。")
