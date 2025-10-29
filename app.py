@@ -162,47 +162,26 @@ with tabs[0]:
 
         if st.button("Googleスプレッドシートに上書き保存"):
             try:
-                st.info("🔄 スプレッドシートに接続中…")
-                client = connect_to_gsheet()
-                sheet = client.open("医療システム管理表").worksheet("シート1")
-                st.success("✅ 接続成功！")
+            st.info("🔄 スプレッドシートに接続中…")
+            client = connect_to_gsheet()
+            ss = client.open("医療システム管理表")
+            sheet = ss.sheet1
+            st.success("✅ 接続成功！")
         
-                data_to_write = st.session_state["results_data"]
-                clean_df = data_to_write.fillna("").astype(str)
+            st.write("📄 シート名:", sheet.title)  # ← デバッグ
+            st.write("📘 スプレッドシートタイトル:", ss.title)  # ← デバッグ
         
-                st.info(f"📄 書き込みデータ数: {len(clean_df)} 件")
+            data_to_write = st.session_state["results_data"]
+            clean_df = data_to_write.fillna("").astype(str)
         
-                # 全消去
-                sheet.clear()
-                st.info("🧹 既存データをクリアしました。")
+            st.info(f"📄 書き込みデータ数: {len(clean_df)} 件")
         
-                # 列名＋データ
-                all_data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
+            sheet.clear()
+            sheet.update([clean_df.columns.values.tolist()] + clean_df.values.tolist())
+            st.success("✅ Googleスプレッドシートに上書き保存しました！")
         
-                import time
-                import requests
-        
-                try:
-                    st.info("🔄 スプレッドシートに接続中…")
-                    client = connect_to_gsheet()
-                    ss = client.open("医療システム管理表")
-                    sheet = ss.sheet1
-                    st.success("✅ 接続成功！")
-                
-                    st.write("📄 シート名:", sheet.title)  # ← デバッグ
-                    st.write("📘 スプレッドシートタイトル:", ss.title)  # ← デバッグ
-                
-                    data_to_write = st.session_state["results_data"]
-                    clean_df = data_to_write.fillna("").astype(str)
-                
-                    st.info(f"📄 書き込みデータ数: {len(clean_df)} 件")
-                
-                    sheet.clear()
-                    sheet.update([clean_df.columns.values.tolist()] + clean_df.values.tolist())
-                    st.success("✅ Googleスプレッドシートに上書き保存しました！")
-                
-                except Exception as e:
-                    st.error(f"❌ エラーが発生しました: {e}")
+        except Exception as e:
+            st.error(f"❌ エラーが発生しました: {e}")
 
     else:
         st.info("まずExcelファイルをアップロードして『データを表示』を押してください。")
