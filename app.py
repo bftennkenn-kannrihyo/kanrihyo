@@ -158,25 +158,26 @@ with tabs[0]:
 
                     # ✅ 上書き保存ボタン
                     if st.button("Googleスプレッドシートに上書き保存"):
-                        if len(st.session_state["results_data"]) == 0:
-                            st.warning("⚠️ データがありません。先にExcelを読み込み、表示してください。")
-                        else:
-                            try:
-                                st.info("🔄 スプレッドシートに接続中…")
-                                client = connect_to_gsheet()
+                        try:
+                            st.info("🔄 スプレッドシートに接続中…")
+                            client = connect_to_gsheet()
+                            sheet = client.open("医療システム管理表").worksheet("シート1")
+                            st.success("✅ 接続成功！")
+                    
+                            data_to_write = st.session_state["results_data"]
+                            st.info(f"📄 書き込みデータ数: {len(data_to_write)} 件")
+                    
+                            if len(data_to_write) > 0:
                                 st.info("📡 Googleスプレッドシート接続完了 — 書き込み準備OK")
-                                sheet = client.open("医療システム管理表").worksheet("シート1")
-                                st.success("✅ 接続成功！")
-
-                                data_to_write = st.session_state["results_data"]
-
-                                st.info(f"📄 書き込みデータ数: {len(data_to_write)} 件")
                                 sheet.clear()
+                                st.info("🧹 既存データをクリアしました。")
                                 sheet.update([data_to_write.columns.values.tolist()] + data_to_write.values.tolist())
                                 st.success("✅ Googleスプレッドシートに上書き保存しました！")
-
-                            except Exception as e:
-                                st.error(f"❌ エラーが発生しました: {e}")
+                            else:
+                                st.warning("⚠️ 書き込むデータがありません。")
+                    
+                        except Exception as e:
+                            st.error(f"❌ エラーが発生しました: {e}")
 
     else:
         st.info("まずExcelファイルをアップロードしてください。")
