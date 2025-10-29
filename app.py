@@ -160,29 +160,26 @@ with tabs[0]:
             st.info("🔄 スプレッドシートに接続中…")
             client = connect_to_gsheet()
             ss = client.open("医療システム管理表")
-            sheet = ss.worksheet("シート1")  # ←タブ名に合わせて変更！
-    
+            sheet = ss.worksheet("シート1")  # ← シート名を合わせる
             st.success("✅ 接続成功！")
-            st.write("📘 スプレッドシートタイトル:", ss.title)
-            st.write("📄 シート名:", sheet.title)
     
-            # データを準備
             data_to_write = st.session_state["results"]
             clean_df = data_to_write.fillna("").astype(str)
+            data = [clean_df.columns.tolist()] + clean_df.values.tolist()
     
-            # numpy配列をlistに変換（gspreadはnumpy非対応のことがある）
-            data = [clean_df.columns.tolist()] + clean_df.astype(str).values.tolist()
+            # ✅ 全削除してから新規書き込み
+            sheet.clear()
     
-            # まず全削除
-            sheet.batch_clear(["A:ZZ"])  
+            # --- update_cells方式で確実に書き込む ---
+            cell_list = sheet.range(1, 1, len(data), len(data[0]))
+            flat_data = [item for row in data for item in row]
     
-            # 書き込み（API応答エラーを無視して継続）
-            try:
-                sheet.update(data, value_input_option="USER_ENTERED")
-                st.success("✅ スプレッドシートに上書き保存しました！（応答形式による擬似エラーは無視OK）")
-            except Exception as e:
-                st.warning(f"⚠️ Googleの応答形式差異: {e}")
-                st.info("書き込みは完了しています。スプレッドシートを確認してください。")
+            for i, cell in enumerate(cell_list):
+                cell.value = flat_data[i]
+    
+            sheet.update_cells(cell_list, value_input_option="USER_ENTERED")
+    
+            st.success("✅ スプレッドシートに正しく上書きされました！")
     
         except Exception as e:
             st.error(f"❌ 本当のエラーが発生しました: {e}")
