@@ -122,47 +122,68 @@ with tabs[0]:
                 if st.checkbox(col, value=(col == "施設名"), key=f"col_{col}"):
                     selected_fields.append(col)
 
-        # --- データを表示 ---
+        # --- データ表示 ---
         if st.button("データを表示"):
             if not selected_fields:
                 st.warning("少なくとも1つ項目を選択してください。")
             elif "施設名" not in df.columns:
                 st.error("Excelに『施設名』という列が必要です。")
             else:
-                # 絞り込み
+                # 施設名で絞り込み
                 if query.strip():
                     names = [n.strip() for n in query.splitlines() if n.strip()]
                     filtered = df[df["施設名"].isin(names)]
                 else:
                     filtered = df.copy()
         
+                # ✅ チェック項目だけのデータ表示
                 results = filtered[selected_fields]
-                st.session_state["results"] = results  # ✅ 結果をセッションに保存
-                st.success(f"✅ {len(results)} 件のデータを抽出しました。")
+                st.session_state["results"] = results  # 保持（再読み込み対応）
         
-        # --- データ表示（保持機能付き）---
-        if "results" in st.session_state and not st.session_state["results"].empty:
+                st.success(f"✅ {len(results)}件のデータを表示しました。")
+                st.subheader("📋 表示中のデータ（チェック項目のみ）")
+                st.dataframe(results, use_container_width=True)
+        
+                # ▼ さらに絞り込みボタン
+                if st.button("🔎 さらに絞り込み"):
+                    with st.expander("絞り込み設定を開く", expanded=True):
+                        refined = filter_dataframe(results)
+                        st.subheader("🔎 絞り込み結果")
+                        st.dataframe(refined, use_container_width=True)
+        
+                        # CSV出力
+                        output = BytesIO()
+                        refined.to_csv(output, index=False, encoding="utf-8-sig")
+                        st.download_button(
+                            "CSVで保存",
+                            data=output.getvalue(),
+                            file_name="filtered_data.csv",
+                            mime="text/csv"
+                        )
+        
+        # --- セッション保持による再表示 ---
+        elif "results" in st.session_state and not st.session_state["results"].empty:
             results = st.session_state["results"]
-            st.subheader("📋 絞り込み前データ")
+            st.subheader("📋 前回表示したデータ")
             st.dataframe(results, use_container_width=True)
+        
+            if st.button("🔎 さらに絞り込み（再表示中）"):
+                with st.expander("絞り込み設定を開く", expanded=True):
+                    refined = filter_dataframe(results)
+                    st.subheader("🔎 絞り込み結果")
+                    st.dataframe(refined, use_container_width=True)
+        
+                    output = BytesIO()
+                    refined.to_csv(output, index=False, encoding="utf-8-sig")
+                    st.download_button(
+                        "CSVで保存",
+                        data=output.getvalue(),
+                        file_name="filtered_data.csv",
+                        mime="text/csv"
+                    )
         else:
-            st.info("まず『データを表示』ボタンを押してください。")
+            st.info("まずExcelファイルをアップロードして『データを表示』を押してください。")
 
-
-    # --- 結果表示＆スプレッドシート出力 ---
-    if "results_data" in st.session_state:
-        results = st.session_state["results_data"]
-        st.subheader("📋 絞り込み結果")
-        st.dataframe(results, use_container_width=True)
-
-        with st.expander("🔎 さらに絞り込み（必要な時だけ開く）", expanded=False):
-            refined = filter_dataframe(results)
-            st.dataframe(refined, use_container_width=True)
-
-            output = BytesIO()
-            refined.to_csv(output, index=False, encoding="utf-8-sig")
-            st.download_button("CSVで保存", data=output.getvalue(),
-                               file_name="filtered_data.csv", mime="text/csv")
 
     # --- Googleスプレッドシートへの上書き保存 ---
     if st.button("Googleスプレッドシートに上書き保存"):
