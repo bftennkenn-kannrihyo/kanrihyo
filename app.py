@@ -166,39 +166,28 @@ with tabs[0]:
 
     # --- Googleスプレッドシートへの上書き保存 ---
     if st.button("Googleスプレッドシートに上書き保存"):
-        try:
-            # ✅ データをセッションから安全に取得
-            if "results" not in st.session_state or st.session_state["results"].empty:
-                st.warning("⚠️ データが見つかりません。『データを表示』ボタンを先に押してください。")
-            else:
-                results = st.session_state["results"]
-                clean_df = results.fillna("").astype(str)
-                data = [clean_df.columns.tolist()] + clean_df.values.tolist()
-    
-                st.info(f"🧾 書き込みデータ件数: {len(clean_df)}")
-    
-                # ✅ Googleスプレッドシート接続
+        if "results" not in st.session_state or st.session_state["results"].empty:
+            st.warning("⚠️ データがありません。『データを表示』ボタンを先に押してください。")
+        else:
+            try:
                 st.info("🔄 スプレッドシートに接続中…")
                 client = connect_to_gsheet()
                 ss = client.open("医療システム管理表")
-                sheet = ss.worksheet("シート1")  # ← シート名を一致させる
-                st.success(f"✅ 接続成功！ 書き込み先シート: {sheet.title}")
+                sheet = ss.sheet1
+                st.success("✅ 接続成功！")
     
-                # ✅ シートをクリアして新規書き込み
+                results = st.session_state["results"].fillna("").astype(str)
+                st.write(f"📄 書き込みデータ件数: {len(results)}")
+    
+                # DataFrame → list に変換してアップロード
+                data = [results.columns.tolist()] + results.values.tolist()
                 sheet.clear()
+                sheet.update(data)
+                st.success("✅ Googleスプレッドシートに上書き保存しました！")
     
-                import time
-                time.sleep(1)  # Google側の反映待ち（重要）
-    
-                # --- 1行ずつ書き込む（安定性優先） ---
-                for i, row in enumerate(data):
-                    sheet.insert_row(row, i + 1)
-                
-                st.success("✅ スプレッドシートに上書き保存しました！")
-    
-        except Exception as e:
-            st.error(f"❌ 本当のエラーが発生しました: {e}")
-            
+            except Exception as e:
+                st.error(f"❌ エラーが発生しました: {str(e)}")
+
     else:
         st.info("まずExcelファイルをアップロードして『データを表示』を押してください。")
 
