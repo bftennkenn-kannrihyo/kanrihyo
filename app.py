@@ -141,48 +141,29 @@ with tabs[0]:
                 st.session_state["results"] = results  # 保持（再読み込み対応）
         
                 st.success(f"✅ {len(results)}件のデータを表示しました。")
-                st.subheader("📋 表示中のデータ（チェック項目のみ）")
-                st.dataframe(results, use_container_width=True)
+                st.subheader("📋 表示中のデータ（Excel風フィルター対応）")
         
-                # ▼ さらに絞り込みボタン
-                if st.button("🔎 さらに絞り込み"):
-                    with st.expander("絞り込み設定を開く", expanded=True):
-                        refined = filter_dataframe(results)
-                        st.subheader("🔎 絞り込み結果")
-                        st.dataframe(refined, use_container_width=True)
-        
-                        # CSV出力
-                        output = BytesIO()
-                        refined.to_csv(output, index=False, encoding="utf-8-sig")
-                        st.download_button(
-                            "CSVで保存",
-                            data=output.getvalue(),
-                            file_name="filtered_data.csv",
-                            mime="text/csv"
-                        )
+                # 🪄 Excelみたいにフィルター・並び替え可能なデータフレーム
+                st.dataframe(
+                    results,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config=None
+                )
         
         # --- セッション保持による再表示 ---
         elif "results" in st.session_state and not st.session_state["results"].empty:
             results = st.session_state["results"]
-            st.subheader("📋 前回表示したデータ")
-            st.dataframe(results, use_container_width=True)
-        
-            if st.button("🔎 さらに絞り込み（再表示中）"):
-                with st.expander("絞り込み設定を開く", expanded=True):
-                    refined = filter_dataframe(results)
-                    st.subheader("🔎 絞り込み結果")
-                    st.dataframe(refined, use_container_width=True)
-        
-                    output = BytesIO()
-                    refined.to_csv(output, index=False, encoding="utf-8-sig")
-                    st.download_button(
-                        "CSVで保存",
-                        data=output.getvalue(),
-                        file_name="filtered_data.csv",
-                        mime="text/csv"
-                    )
+            st.subheader("📋 前回表示したデータ（Excel風フィルター対応）")
+            st.dataframe(
+                results,
+                use_container_width=True,
+                hide_index=True,
+                column_config=None
+            )
         else:
             st.info("まずExcelファイルをアップロードして『データを表示』を押してください。")
+
 
 
     # --- Googleスプレッドシートへの上書き保存 ---
