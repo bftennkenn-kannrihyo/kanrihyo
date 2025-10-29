@@ -183,19 +183,25 @@ with tabs[0]:
                 import requests
         
                 try:
-                    sheet.update(all_data)
+                    st.info("🔄 スプレッドシートに接続中…")
+                    client = connect_to_gsheet()
+                    ss = client.open("医療システム管理表")
+                    sheet = ss.sheet1
+                    st.success("✅ 接続成功！")
+                
+                    st.write("📄 シート名:", sheet.title)  # ← デバッグ
+                    st.write("📘 スプレッドシートタイトル:", ss.title)  # ← デバッグ
+                
+                    data_to_write = st.session_state["results_data"]
+                    clean_df = data_to_write.fillna("").astype(str)
+                
+                    st.info(f"📄 書き込みデータ数: {len(clean_df)} 件")
+                
+                    sheet.clear()
+                    sheet.update([clean_df.columns.values.tolist()] + clean_df.values.tolist())
                     st.success("✅ Googleスプレッドシートに上書き保存しました！")
-                except requests.exceptions.RequestException as e:
-                    # gspreadがResponse[200]で落ちる場合の対策
-                    st.warning("⚠️ 書き込みは成功していますが、レスポンス処理でエラーになりました。")
-                    st.info("👉 スプレッドシートをリロードして内容を確認してください。")
-        
-                time.sleep(0.5)
-        
-            except Exception as e:
-                if "Response [200]" in str(e):
-                    st.warning("⚠️ 書き込みは成功しています（Googleの応答形式の違いによるエラー表示）")
-                else:
+                
+                except Exception as e:
                     st.error(f"❌ エラーが発生しました: {e}")
 
     else:
