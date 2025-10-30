@@ -16,7 +16,7 @@ def connect_gspread():
     creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
     return gspread.authorize(creds)
 
-# ===== ユーザー選択（左サイドバー） =====
+# ===== ユーザー選択（サイドバー） =====
 try:
     client = connect_gspread()
     ws_user = client.open_by_key(SPREADSHEET_ID).worksheet("ユーザー情報")
@@ -33,6 +33,7 @@ try:
 except Exception as e:
     st.sidebar.error(f"ユーザー情報の取得に失敗しました: {e}")
     st.stop()
+
 
 # ===== 共通関数 =====
 def get_worksheet(sheet_name):
@@ -65,8 +66,30 @@ def save_changes_with_history(sheet_name, ws, df_before, df_after, user):
     else:
         st.info("変更はありません。")
 
+# ===== フィルタ関数（点検予定月・エリア） =====
+def apply_extra_filters(df):
+    with st.expander("🔎 さらに絞り込み（必要なときだけ開く）", expanded=False):
+        filtered_df = df.copy()
+
+        if "点検予定月" in df.columns:
+            months = [str(i) for i in range(1, 13)]
+            selected_months = st.multiselect("点検予定月を選択", months)
+            if selected_months:
+                filtered_df = filtered_df[filtered_df["点検予定月"].astype(str).isin(selected_months)]
+
+        if "エリア" in df.columns:
+            areas = ["北海道", "東北", "北関東", "東関東", "東京", "南関東",
+                     "中部", "関西", "中国", "四国", "九州"]
+            selected_areas = st.multiselect("エリアを選択", areas)
+            if selected_areas:
+                filtered_df = filtered_df[filtered_df["エリア"].isin(selected_areas)]
+
+        return filtered_df
+
+
 # ===== メインタブ =====
 tabs = st.tabs(["医療", "生体", "カレンダー"])
+
 
 # =====================
 # 🏥 医療データ
@@ -76,23 +99,32 @@ with tabs[0]:
     try:
         ws_med, df_med = load_sheet("医療")
 
-        # チェックボックスで表示項目を選択
-        st.markdown("### ✅ 表示する項目を選択")
-        selected_cols = st.multiselect("表示する列を選択", df_med.columns.tolist(), default=df_med.columns.tolist())
+        st.markdown("### ✅ 表示する項目を選択（チェックした列のみ表示）")
+        selected_fields = []
+        cols = st.columns(min(5, len(df_med.columns)))
+        for i, col in enumerate(df_med.columns):
+            with cols[i % len(cols)]:
+                if st.checkbox(col, value=(col in ["施設名", "点検予定月", "エリア"])):
+                    selected_fields.append(col)
 
-        # データ取得ボタン
-        if st.button("データを取得"):
-            st.session_state["filtered_med"] = df_med[selected_cols]
+        if st.button("📄 データを取得", key="get_med"):
+            st.session_state["filtered_med"] = df_med[selected_fields]
 
-        # 一覧表示（編集可能）
         if "filtered_med" in st.session_state:
+            filtered_df = st.session_state["filtered_med"]
+            filtered_df = apply_extra_filters(filtered_df)  # 絞り込み
+
             st.subheader("📋 医療データ（直接編集可）")
-            edited_df = st.data_editor(st.session_state["filtered_med"], use_container_width=True, key="edit_医療")
+            st.markdown("💾 下のボタンで上書き保存（履歴に残ります）")
+
+            edited_df = st.data_editor(filtered_df, use_container_width=True, key="edit_医療")
+
             if st.button("💾 上書き保存（履歴に記録）", key="save_医療"):
                 save_changes_with_history("医療", ws_med, df_med, edited_df, st.session_state["current_user"])
 
     except Exception as e:
         st.error(f"❌ データ取得エラー: {e}")
+
 
 # =====================
 # 🧬 生体データ
@@ -102,23 +134,35 @@ with tabs[1]:
     try:
         ws_bio, df_bio = load_sheet("生体")
 
-        st.markdown("### ✅ 表示する項目を選択")
-        selected_cols = st.multiselect("表示する列を選択", df_bio.columns.tolist(), default=df_bio.columns.tolist())
+        st.markdown("### ✅ 表示する項目を選択（チェックした列のみ表示）")
+        selected_fields = []
+        cols = st.columns(min(5, len(df_bio.columns)))
+        for i, col in enumerate(df_bio.columns):
+            with cols[i % len(cols)]:
+                if st.checkbox(col, value=(col in ["施設名", "点検予定月", "エリア"]), key=f"bio_{col}"):
+                    selected_fields.append(col)
 
-        if st.button("データを取得", key="get_bio"):
-            st.session_state["filtered_bio"] = df_bio[selected_cols]
+        if st.button("📄 データを取得", key="get_bio"):
+            st.session_state["filtered_bio"] = df_bio[selected_fields]
 
         if "filtered_bio" in st.session_state:
+            filtered_df = st.session_state["filtered_bio"]
+            filtered_df = apply_extra_filters(filtered_df)  # 絞り込み
+
             st.subheader("📋 生体データ（直接編集可）")
-            edited_df = st.data_editor(st.session_state["filtered_bio"], use_container_width=True, key="edit_生体")
+            st.markdown("💾 下のボタンで上書き保存（履歴に残ります）")
+
+            edited_df = st.data_editor(filtered_df, use_container_width=True, key="edit_生体")
+
             if st.button("💾 上書き保存（履歴に記録）", key="save_生体"):
                 save_changes_with_history("生体", ws_bio, df_bio, edited_df, st.session_state["current_user"])
 
     except Exception as e:
         st.error(f"❌ データ取得エラー: {e}")
 
+
 # =====================
-# 📅 カレンダー（後で設定）
+# 📅 カレンダー（仮）
 # =====================
 with tabs[2]:
     st.header("📅 カレンダー（準備中）")
