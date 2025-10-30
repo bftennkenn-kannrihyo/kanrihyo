@@ -37,7 +37,7 @@ with tabs[0]:
     if st.button("🔄 スプレッドシートから最新データを取得（医療）"):
         try:
             client = connect_to_gsheet()
-            sheet = client.open_by_key(SPREADSHEET_ID).worksheet("シート1")  # ← シート名に合わせて変更
+            sheet = client.open_by_key(SPREADSHEET_ID).worksheet("医療")  # ← シート名に合わせて変更
             st.info("📡 医療データを取得中…")
 
             data = sheet.get_all_records()
@@ -68,7 +68,7 @@ with tabs[0]:
         if st.button("☁️ スプレッドシートに上書き保存（医療）"):
             try:
                 client = connect_to_gsheet()
-                sheet = client.open_by_key(SPREADSHEET_ID).worksheet("シート1")
+                sheet = client.open_by_key(SPREADSHEET_ID).worksheet("医療")
                 st.info("💾 医療データを上書き中…")
 
                 data = [edited_df.columns.tolist()] + edited_df.fillna("").values.tolist()
