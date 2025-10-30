@@ -1,208 +1,203 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
+from datetime import datetime, timedelta
 
 # ===============================
-# 🔧 Google設定
+# Google スプレッドシート接続
 # ===============================
 SPREADSHEET_ID = "15bsvTOQOJrHjgsVh2IJFzKkaig2Rk2YLA130y8_k4Vs"
 
 def connect_to_gsheet():
-    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
     creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
     client = gspread.authorize(creds)
     return client
 
-# ===============================
-# 📦 データ取得
-# ===============================
-@st.cache_data(ttl=300)
-def get_sheet_data(sheet_name):
+def read_sheet(sheet_name):
+    """スプレッドシートから読み込み"""
     client = connect_to_gsheet()
     ws = client.open_by_key(SPREADSHEET_ID).worksheet(sheet_name)
     data = ws.get_all_records()
-    df = pd.DataFrame(data)
-    return df
+    return pd.DataFrame(data)
 
 # ===============================
-# 💾 シート更新 & 履歴追加
+# 変更検出＋履歴書き込み
 # ===============================
-def save_changes(sheet_name, edited_df, original_df, editor_name):
-    try:
-        client = connect_to_gsheet()
-        ws = client.open_by_key(SPREADSHEET_ID).worksheet(sheet_name)
-        ws_history = client.open_by_key(SPREADSHEET_ID).worksheet("履歴")
-
-        updated = []
-        for idx, row in edited_df.iterrows():
-            if not row.equals(original_df.loc[idx]):
-                for col in row.index:
-                    if row[col] != original_df.loc[idx, col]:
-                        ws.update_cell(idx + 2, list(edited_df.columns).index(col) + 1, str(row[col]))
-                        updated.append([
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            sheet_name,
-                            col,
-                            str(original_df.loc[idx, col]),
-                            str(row[col]),
-                            editor_name
-                        ])
-
-        if updated:
-            ws_history.append_rows(updated)
-            st.success(f"✅ {len(updated)}件の変更を保存しました（編集者: {editor_name}）")
-        else:
-            st.info("変更はありません。")
-
-    except Exception as e:
-        st.error(f"❌ 保存エラー: {e}")
-
-# ===============================
-# 🧭 データ表示
-# ===============================
-def fetch_and_display(sheet_name, editor_name):
-    st.markdown(f"### 📋 {sheet_name}データ（直接編集可）")
-
-    if st.button(f"🔄 {sheet_name}データを取得", key=f"load_{sheet_name}"):
-        df = get_sheet_data(sheet_name)
-        st.session_state[f"{sheet_name}_data"] = df
-
-    df = st.session_state.get(f"{sheet_name}_data", pd.DataFrame())
-
-    if not df.empty:
-        st.success(f"{len(df)}件のデータを取得しました。")
-
-        # ✅ 表示項目の選択
-        st.markdown("### ✅ 表示する項目を選択")
-        selected_fields = []
-        cols = st.columns(5)
-        for i, col_name in enumerate(df.columns):
-            with cols[i % 5]:
-                if st.checkbox(col_name, value=(col_name in ["施設名", "点検予定月", "エリア"]), key=f"{sheet_name}_{col_name}"):
-                    selected_fields.append(col_name)
-
-        filtered_df = df[selected_fields] if selected_fields else df
-
-        # ✅ 絞り込み（点検予定月・エリア）
-        with st.expander("🔎 さらに絞り込み（必要な時だけ開く）"):
-            month_filter = None
-            area_filter = None
-
-            if "点検予定月" in df.columns:
-                months = sorted(df["点検予定月"].dropna().unique().tolist())
-                month_filter = st.multiselect("点検予定月", months, default=months)
-
-            if "エリア" in df.columns:
-                areas = ["北海道","東北","北関東","東関東","東京","南関東","中部","関西","中国","四国","九州"]
-                area_filter = st.multiselect("エリア", areas, default=areas)
-
-            if month_filter:
-                filtered_df = filtered_df[filtered_df["点検予定月"].isin(month_filter)]
-            if area_filter:
-                filtered_df = filtered_df[filtered_df["エリア"].isin(area_filter)]
-
-        # ✅ データ編集（Excelのように）
-        edited_df = st.data_editor(filtered_df, use_container_width=True, key=f"edit_{sheet_name}")
-
-        # ✅ 保存ボタン（タイトル横）
-        save_col, _ = st.columns([1, 6])
-        with save_col:
-            if st.button("💾 上書き保存", key=f"save_{sheet_name}"):
-                save_changes(sheet_name, edited_df, filtered_df, editor_name)
-    else:
-        st.info("『🔄 データを取得』ボタンを押してください。")
-
-# ===============================
-# 👤 ユーザー管理（登録のみ）
-# ===============================
-def user_registration():
-    st.header("👤 ユーザー情報登録")
-
+def write_with_history(sheet_name, new_df, user):
     client = connect_to_gsheet()
-    ws_user = client.open_by_key(SPREADSHEET_ID).worksheet("ユーザー情報")
-    df_users = pd.DataFrame(ws_user.get_all_records())
+    ss = client.open_by_key(SPREADSHEET_ID)
+    ws = ss.worksheet(sheet_name)
+    old_df = pd.DataFrame(ws.get_all_records())
 
-    st.subheader("登録済みユーザー")
-    if not df_users.empty:
-        st.dataframe(df_users, use_container_width=True)
-    else:
-        st.info("まだ登録者がいません。")
+    # 変更を検出
+    changes = []
+    for i in range(min(len(new_df), len(old_df))):
+        for col in new_df.columns:
+            old_val = str(old_df.at[i, col]) if col in old_df.columns else ""
+            new_val = str(new_df.at[i, col])
+            if old_val != new_val:
+                changes.append([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    user,
+                    sheet_name,
+                    i + 2,  # Google Sheetsではヘッダーが1行目
+                    col,
+                    old_val,
+                    new_val
+                ])
 
-    st.divider()
-    st.subheader("新規登録")
+    # シート上書き
+    ws.clear()
+    ws.update([new_df.columns.values.tolist()] + new_df.fillna("").values.tolist())
 
-    name = st.text_input("名前")
-    email = st.text_input("メールアドレス")
-
-    if st.button("登録"):
-        if not name or not email:
-            st.warning("名前とメールを入力してください。")
-        else:
-            ws_user.append_row([name, email, datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
-            st.success(f"✅ {name} さんを登録しました！")
-
-# ===============================
-# 📅 カレンダー
-# ===============================
-def calendar_tab():
-    st.header("📅 点検スケジュール生成")
-
-    sheet_choice = st.radio("対象シートを選択", ["医療", "生体"], horizontal=True)
-    df = get_sheet_data(sheet_choice)
-
-    if df.empty or "施設名" not in df.columns:
-        st.warning("施設名が含まれたデータが見つかりません。")
-        return
-
-    if "点検予定月" in df.columns:
-        months = sorted(df["点検予定月"].dropna().unique().tolist())
-        selected_month = st.selectbox("📆 点検予定月を選択", months)
-        df = df[df["点検予定月"] == selected_month]
-
-    if df.empty:
-        st.warning("該当するデータがありません。")
-        return
-
-    start_date = datetime(datetime.today().year, int(selected_month), 1)
-    schedule = []
-    day = start_date
-
-    for _, row in df.iterrows():
-        while day.weekday() >= 5:
-            day += timedelta(days=1)
-        schedule.append({"日付": day.strftime("%Y-%m-%d（%a）"), "施設名": row["施設名"]})
-        day += timedelta(days=1)
-
-    df_schedule = pd.DataFrame(schedule)
-    st.dataframe(df_schedule, use_container_width=True)
-    st.download_button("📤 CSVで保存", df_schedule.to_csv(index=False, encoding="utf-8-sig"), file_name=f"schedule_{sheet_choice}.csv")
+    # 履歴追記
+    if changes:
+        log_name = f"{sheet_name}_履歴"
+        try:
+            ws_log = ss.worksheet(log_name)
+        except gspread.WorksheetNotFound:
+            ws_log = ss.add_worksheet(title=log_name, rows=1000, cols=10)
+            ws_log.append_row(["日時", "ユーザー", "対象シート", "行", "列", "変更前", "変更後"])
+        ws_log.append_rows(changes)
 
 # ===============================
-# 🚀 メイン画面
+# Streamlit 設定
 # ===============================
-st.set_page_config(page_title="管理表", layout="wide")
+st.set_page_config(page_title="医療・生体システム管理表", layout="wide")
 st.title("🏥 医療・生体システム管理表")
 
-# 👤 編集者選択
-st.sidebar.header("👤 編集者")
-client = connect_to_gsheet()
-ws_user = client.open_by_key(SPREADSHEET_ID).worksheet("ユーザー情報")
-df_users = pd.DataFrame(ws_user.get_all_records())
-user_list = df_users["名前"].tolist() if not df_users.empty else []
-editor_name = st.sidebar.selectbox("編集者を選択", user_list)
+tabs = st.tabs(["💊 医療", "🧬 生体", "📅 カレンダー", "👤 ユーザー情報"])
 
-if not editor_name:
-    st.warning("左のサイドバーから編集者を選択してください。")
-else:
-    tabs = st.tabs(["医療", "生体", "カレンダー", "ユーザー情報"])
+# ===============================
+# 共通：データ表示＋編集機能
+# ===============================
+def display_sheet(sheet_name):
+    try:
+        df = read_sheet(sheet_name)
 
-    with tabs[0]:
-        fetch_and_display("医療", editor_name)
-    with tabs[1]:
-        fetch_and_display("生体", editor_name)
-    with tabs[2]:
-        calendar_tab()
-    with tabs[3]:
-        user_registration()
+        # --- 表示列チェック ---
+        st.markdown("### ✅ 表示する項目を選択")
+        selected_fields = []
+        cols = st.columns(min(5, len(df.columns)))
+        for i, col in enumerate(df.columns):
+            with cols[i % len(cols)]:
+                if st.checkbox(col, value=True, key=f"{sheet_name}_{col}"):
+                    selected_fields.append(col)
+
+        # --- 絞り込み ---
+        filter_active = st.checkbox("🔎 さらに絞り込みをする", value=False, key=f"filter_{sheet_name}")
+        if filter_active:
+            if "点検予定月" in df.columns:
+                months = [f"{i}月" for i in range(1, 13)]
+                selected_months = st.multiselect("点検予定月を選択", months, key=f"{sheet_name}_month")
+                if selected_months:
+                    df = df[df["点検予定月"].isin(selected_months)]
+            if "エリア" in df.columns:
+                areas = ["北海道","東北","北関東","東関東","東京","南関東",
+                         "中部","関西","中国","四国","九州"]
+                selected_areas = st.multiselect("エリアを選択", areas, key=f"{sheet_name}_area")
+                if selected_areas:
+                    df = df[df["エリア"].isin(selected_areas)]
+
+        # --- 編集UI ---
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.subheader(f"📋 {sheet_name}データ（直接編集可）")
+        with col2:
+            user = st.session_state.get("current_user", "未登録ユーザー")
+            if st.button("💾 上書き保存", key=f"save_{sheet_name}"):
+                edited_df = st.session_state.get(f"edit_{sheet_name}", df)
+                write_with_history(sheet_name, edited_df, user)
+                st.success(f"✅ {sheet_name}の変更を保存し、履歴に記録しました。")
+
+        edited_df = st.data_editor(df[selected_fields], use_container_width=True, key=f"edit_{sheet_name}")
+        st.session_state[f"edit_{sheet_name}"] = edited_df
+
+    except Exception as e:
+        st.error(f"❌ データ取得エラー: {e}")
+
+# ===============================
+# 医療タブ
+# ===============================
+with tabs[0]:
+    st.header("💊 医療システム管理表")
+    display_sheet("医療")
+
+# ===============================
+# 生体タブ
+# ===============================
+with tabs[1]:
+    st.header("🧬 生体システム管理表")
+    display_sheet("生体")
+
+# ===============================
+# カレンダータブ
+# ===============================
+with tabs[2]:
+    st.header("📅 点検スケジュール生成")
+
+    try:
+        sheet_choice = st.radio("対象シートを選択", ["医療", "生体"], horizontal=True)
+        df = read_sheet(sheet_choice)
+
+        if "施設名" not in df.columns:
+            st.warning("施設名の列が見つかりません。")
+        else:
+            if "点検予定月" in df.columns:
+                months = sorted(df["点検予定月"].dropna().unique().tolist())
+                selected_month = st.selectbox("📆 点検予定月を選択", months)
+                df = df[df["点検予定月"] == selected_month]
+
+            if not df.empty:
+                start_date = datetime(datetime.today().year, int(selected_month.replace("月", "")), 1)
+                schedule = []
+                day = start_date
+                for _, row in df.iterrows():
+                    while day.weekday() >= 5:
+                        day += timedelta(days=1)
+                    schedule.append({"日付": day.strftime("%Y-%m-%d（%a）"), "施設名": row["施設名"]})
+                    day += timedelta(days=1)
+
+                df_schedule = pd.DataFrame(schedule)
+                st.dataframe(df_schedule, use_container_width=True)
+                st.download_button(
+                    "📤 CSVで保存",
+                    df_schedule.to_csv(index=False, encoding="utf-8-sig"),
+                    file_name=f"schedule_{sheet_choice}.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.info("選択した月に該当するデータがありません。")
+    except Exception as e:
+        st.error(f"❌ カレンダー生成エラー: {e}")
+
+# ===============================
+# ユーザー情報タブ（以前の仕様）
+# ===============================
+with tabs[3]:
+    st.header("👤 ユーザー情報")
+    try:
+        df_user = read_sheet("ユーザー情報")
+        st.dataframe(df_user, use_container_width=True)
+
+        with st.expander("➕ 新しいユーザーを登録"):
+            with st.form("user_form"):
+                name = st.text_input("氏名")
+                dept = st.text_input("部署")
+                email = st.text_input("メールアドレス")
+                submitted = st.form_submit_button("登録")
+
+                if submitted and name:
+                    new_user = pd.DataFrame([[name, dept, email]], columns=df_user.columns)
+                    client = connect_to_gsheet()
+                    ws = client.open_by_key(SPREADSHEET_ID).worksheet("ユーザー情報")
+                    ws.append_rows(new_user.values.tolist())
+                    st.session_state["current_user"] = name
+                    st.success(f"✅ ユーザー「{name}」を登録しました。")
+    except Exception as e:
+        st.error(f"❌ ユーザー情報取得エラー: {e}")
