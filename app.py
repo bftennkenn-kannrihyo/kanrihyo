@@ -158,7 +158,7 @@ with tabs[3]:
         st.dataframe(df_user, use_container_width=True)
 
         with st.expander("➕ 新規ユーザー登録"):
-            new_name = st.text_input("氏名")
+            new_name = st.text_input("名前")
             new_mail = st.text_input("メールアドレス")
             new_date = st.text_input("登録日時")
             if st.button("登録"):
