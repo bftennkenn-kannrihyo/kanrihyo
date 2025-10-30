@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from io import BytesIO
 from datetime import datetime, timedelta
 
 # ======================================
@@ -25,8 +24,47 @@ def connect_to_gsheet():
     client = gspread.authorize(creds)
     return client
 
-# あなたのスプレッドシートID
 SPREADSHEET_ID = "15bsvTOQOJrHjgsVh2IJFzKkaig2Rk2YLA130y8_k4Vs"
+
+# ======================================
+# 共通：列選択UI + データ取得関数
+# ======================================
+def fetch_sheet_data(sheet_name, session_key):
+    st.markdown("### ✅ 表示する項目を選択")
+    try:
+        client = connect_to_gsheet()
+        sheet = client.open_by_key(SPREADSHEET_ID).worksheet(sheet_name)
+        columns = sheet.row_values(1)  # 1行目の列名を取得
+    except Exception as e:
+        st.error(f"❌ 列名を取得できませんでした: {e}")
+        st.stop()
+
+    # --- チェックボックス群 ---
+    cols = st.columns(min(5, len(columns)))
+    selected_cols = []
+    for i, col in enumerate(columns):
+        with cols[i % len(cols)]:
+            if st.checkbox(col, value=True, key=f"{sheet_name}_col_{col}"):
+                selected_cols.append(col)
+
+    # --- データ取得ボタン ---
+    if st.button(f"🔄 スプレッドシートから最新データを取得（{sheet_name}）"):
+        try:
+            client = connect_to_gsheet()
+            sheet = client.open_by_key(SPREADSHEET_ID).worksheet(sheet_name)
+            data = sheet.get_all_records()
+            df = pd.DataFrame(data)
+
+            if df.empty:
+                st.warning("⚠️ スプレッドシートにデータがありません。")
+            else:
+                # ✅ 選択した列だけを反映
+                if selected_cols:
+                    df = df[selected_cols]
+                st.session_state[session_key] = df
+                st.success(f"✅ {len(df)}件のデータを取得しました。")
+        except Exception as e:
+            st.error(f"❌ データ取得中にエラーが発生しました: {e}")
 
 # ======================================
 # 医療タブ
@@ -34,25 +72,8 @@ SPREADSHEET_ID = "15bsvTOQOJrHjgsVh2IJFzKkaig2Rk2YLA130y8_k4Vs"
 with tabs[0]:
     st.header("🩺 医療システム管理表（Googleスプレッドシート連携）")
 
-    if st.button("🔄 スプレッドシートから最新データを取得（医療）"):
-        try:
-            client = connect_to_gsheet()
-            sheet = client.open_by_key(SPREADSHEET_ID).worksheet("医療")  # ← シート名に合わせて変更
-            st.info("📡 医療データを取得中…")
+    fetch_sheet_data("医療", "iryo_df")
 
-            data = sheet.get_all_records()
-            df = pd.DataFrame(data)
-
-            if df.empty:
-                st.warning("⚠️ スプレッドシートにデータがありません。")
-            else:
-                st.session_state["iryo_df"] = df
-                st.success(f"✅ {len(df)}件のデータを読み込みました！")
-
-        except Exception as e:
-            st.error(f"❌ 医療データの取得中にエラーが発生しました: {e}")
-
-    # --- 編集可能テーブルを表示 ---
     if "iryo_df" in st.session_state:
         st.subheader("📋 医療データ（直接編集可）")
 
@@ -62,25 +83,18 @@ with tabs[0]:
             hide_index=True,
             num_rows="dynamic",
         )
-
         st.session_state["iryo_edited_df"] = edited_df
 
         if st.button("☁️ スプレッドシートに上書き保存（医療）"):
             try:
                 client = connect_to_gsheet()
                 sheet = client.open_by_key(SPREADSHEET_ID).worksheet("医療")
-                st.info("💾 医療データを上書き中…")
-
                 data = [edited_df.columns.tolist()] + edited_df.fillna("").values.tolist()
                 sheet.clear()
                 sheet.update(data)
                 st.success("✅ 医療データをスプレッドシートに上書き保存しました！")
-
             except Exception as e:
                 st.error(f"❌ 医療データの書き込み中にエラーが発生しました: {e}")
-
-    else:
-        st.info("上の『🔄 スプレッドシートから最新データを取得（医療）』ボタンを押してください。")
 
 # ======================================
 # 生体タブ
@@ -88,25 +102,8 @@ with tabs[0]:
 with tabs[1]:
     st.header("🧬 生体システム管理表（Googleスプレッドシート連携）")
 
-    if st.button("🔄 スプレッドシートから最新データを取得（生体）"):
-        try:
-            client = connect_to_gsheet()
-            sheet = client.open_by_key(SPREADSHEET_ID).worksheet("生体")  # ← シート名に合わせて変更
-            st.info("📡 生体データを取得中…")
+    fetch_sheet_data("生体", "seitai_df")
 
-            data = sheet.get_all_records()
-            df = pd.DataFrame(data)
-
-            if df.empty:
-                st.warning("⚠️ スプレッドシートにデータがありません。")
-            else:
-                st.session_state["seitai_df"] = df
-                st.success(f"✅ {len(df)}件のデータを読み込みました！")
-
-        except Exception as e:
-            st.error(f"❌ 生体データの取得中にエラーが発生しました: {e}")
-
-    # --- 編集可能テーブルを表示 ---
     if "seitai_df" in st.session_state:
         st.subheader("📋 生体データ（直接編集可）")
 
@@ -116,25 +113,18 @@ with tabs[1]:
             hide_index=True,
             num_rows="dynamic",
         )
-
         st.session_state["seitai_edited_df"] = edited_df
 
         if st.button("☁️ スプレッドシートに上書き保存（生体）"):
             try:
                 client = connect_to_gsheet()
                 sheet = client.open_by_key(SPREADSHEET_ID).worksheet("生体")
-                st.info("💾 生体データを上書き中…")
-
                 data = [edited_df.columns.tolist()] + edited_df.fillna("").values.tolist()
                 sheet.clear()
                 sheet.update(data)
                 st.success("✅ 生体データをスプレッドシートに上書き保存しました！")
-
             except Exception as e:
                 st.error(f"❌ 生体データの書き込み中にエラーが発生しました: {e}")
-
-    else:
-        st.info("上の『🔄 スプレッドシートから最新データを取得（生体）』ボタンを押してください。")
 
 # ======================================
 # カレンダータブ
@@ -149,16 +139,13 @@ with tabs[2]:
         today = datetime.today().replace(day=1)
         schedule = []
         day = today
-
         for h in facilities:
-            while day.weekday() >= 5:  # 土日をスキップ
+            while day.weekday() >= 5:
                 day += timedelta(days=1)
             schedule.append({"日付": day.strftime("%Y-%m-%d（%a）"), "施設名": h})
             day += timedelta(days=1)
-
         df_sch = pd.DataFrame(schedule)
         st.dataframe(df_sch, use_container_width=True)
-
         st.download_button(
             "スケジュールをCSVで保存",
             data=df_sch.to_csv(index=False, encoding="utf-8-sig"),
