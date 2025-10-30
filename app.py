@@ -71,7 +71,7 @@ def append_history(sheet_name, user, diffs):
             log_ws.append_rows(rows[i:i+100], value_input_option="USER_ENTERED")
 
 # ======================================
-# シート取得（列選択あり）
+# シート取得（列選択 + 絞り込み対応）
 # ======================================
 def fetch_sheet_data(sheet_name, session_key):
     st.markdown("### ✅ 表示する項目を選択")
@@ -85,7 +85,7 @@ def fetch_sheet_data(sheet_name, session_key):
         st.error(f"❌ データ取得エラー: {e}")
         st.stop()
 
-    # チェックボックスで列選択
+    # --- チェックボックスで列選択 ---
     cols = st.columns(min(5, len(header)))
     selected_cols = []
     for i, col in enumerate(header):
@@ -93,13 +93,45 @@ def fetch_sheet_data(sheet_name, session_key):
             if st.checkbox(col, value=True, key=f"{sheet_name}_col_{col}"):
                 selected_cols.append(col)
 
+    # --- ▼ さらに絞り込み（オプション） ---
+    st.markdown("### 🎯 オプション：さらに絞り込み")
+    enable_filter = st.checkbox("さらに絞り込みをする", key=f"{sheet_name}_enable_filter")
+
+    month_filter = None
+    area_filter = None
+    if enable_filter:
+        with st.expander("🔎 絞り込み条件を設定（点検予定月 / エリア）", expanded=True):
+            if "点検予定月" in header:
+                month_filter = st.multiselect(
+                    "点検予定月を選択（複数可）",
+                    [str(i) + "月" for i in range(1, 13)],
+                    key=f"{sheet_name}_month_filter"
+                )
+
+            if "エリア" in header:
+                area_filter = st.multiselect(
+                    "エリアを選択（複数可）",
+                    ["北海道", "東北", "北関東", "東関東", "東京", "南関東",
+                     "中部", "関西", "中国", "四国", "九州"],
+                    key=f"{sheet_name}_area_filter"
+                )
+
+    # --- データ取得ボタン ---
     if st.button(f"🔄 スプレッドシートから最新データを取得（{sheet_name}）"):
         st.session_state[f"{session_key}_full"] = full_df.copy()
-        if selected_cols:
-            st.session_state[session_key] = full_df[selected_cols].copy()
-        else:
-            st.session_state[session_key] = full_df.copy()
-        st.success(f"✅ {len(st.session_state[session_key])}件のデータを取得しました。")
+
+        # ✅ チェックした列のみ
+        df = full_df[selected_cols].copy() if selected_cols else full_df.copy()
+
+        # ✅ 絞り込み適用
+        if enable_filter:
+            if month_filter and "点検予定月" in df.columns:
+                df = df[df["点検予定月"].astype(str).isin([m.replace("月", "") for m in month_filter])]
+            if area_filter and "エリア" in df.columns:
+                df = df[df["エリア"].isin(area_filter)]
+
+        st.session_state[session_key] = df
+        st.success(f"✅ {len(df)}件のデータを取得しました。")
 
 # ======================================
 # 保存処理（履歴シートのみ追記・非表示列保持）
