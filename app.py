@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="管理表", layout="wide")
 st.title("🏥 管理表")
 
-# ✅ 履歴に残すユーザー名
-user_name = st.text_input("編集者名（履歴に残します）", value=st.session_state.get("user_name", ""))
+# ✅ 編集者名入力
+user_name = st.text_input("編集者名（履歴に残ります）", value=st.session_state.get("user_name", ""))
 st.session_state["user_name"] = user_name.strip() or "不明なユーザー"
 
 tabs = st.tabs(["医療", "生体", "カレンダー"])
@@ -30,7 +30,7 @@ def connect_to_gsheet():
     return gspread.authorize(creds)
 
 # ======================================
-# 差分抽出関数
+# 差分抽出
 # ======================================
 def compare_dataframes(old_df, new_df):
     diffs = []
@@ -71,7 +71,69 @@ def append_history(sheet_name, user, diffs):
             log_ws.append_rows(rows[i:i+100], value_input_option="USER_ENTERED")
 
 # ======================================
-# 保存処理（絞り込み後編集対応：キー一致で部分更新）
+# シート取得（列選択＋点検予定月・エリア絞り込み対応）
+# ======================================
+def fetch_sheet_data(sheet_name, session_key):
+    st.markdown("### ✅ 表示する項目を選択")
+
+    try:
+        client = connect_to_gsheet()
+        ws = client.open_by_key(SPREADSHEET_ID).worksheet(sheet_name)
+        header = ws.row_values(1)
+        full_df = pd.DataFrame(ws.get_all_records())
+    except Exception as e:
+        st.error(f"❌ データ取得エラー: {e}")
+        st.stop()
+
+    # --- チェックボックスで列選択 ---
+    cols = st.columns(min(5, len(header)))
+    selected_cols = []
+    for i, col in enumerate(header):
+        with cols[i % len(cols)]:
+            if st.checkbox(col, value=True, key=f"{sheet_name}_col_{col}"):
+                selected_cols.append(col)
+
+    # --- さらに絞り込みオプション ---
+    st.markdown("### 🎯 オプション：さらに絞り込み")
+    enable_filter = st.checkbox("さらに絞り込みをする", key=f"{sheet_name}_enable_filter")
+
+    month_filter = None
+    area_filter = None
+    if enable_filter:
+        with st.expander("🔎 絞り込み条件を設定（点検予定月 / エリア）", expanded=True):
+            if "点検予定月" in header:
+                month_filter = st.multiselect(
+                    "点検予定月を選択（複数可）",
+                    [str(i) + "月" for i in range(1, 13)],
+                    key=f"{sheet_name}_month_filter"
+                )
+            if "エリア" in header:
+                area_filter = st.multiselect(
+                    "エリアを選択（複数可）",
+                    ["北海道", "東北", "北関東", "東関東", "東京", "南関東",
+                     "中部", "関西", "中国", "四国", "九州"],
+                    key=f"{sheet_name}_area_filter"
+                )
+
+    # --- データ取得ボタン ---
+    if st.button(f"🔄 スプレッドシートから最新データを取得（{sheet_name}）"):
+        st.session_state[f"{session_key}_full"] = full_df.copy()
+
+        df = full_df[selected_cols].copy() if selected_cols else full_df.copy()
+
+        # --- 絞り込み ---
+        if enable_filter:
+            if month_filter and "点検予定月" in df.columns:
+                month_nums = [m.replace("月", "") for m in month_filter]
+                df = df[df["点検予定月"].astype(str).isin(month_nums)]
+            if area_filter and "エリア" in df.columns:
+                df = df[df["エリア"].isin(area_filter)]
+
+        st.session_state[session_key] = df
+        st.success(f"✅ {len(df)}件のデータを取得しました。")
+
+# ======================================
+# 保存処理（施設名キーで部分更新・非表示列保持）
 # ======================================
 def save_to_gsheet(sheet_name, session_key, user):
     try:
@@ -86,16 +148,15 @@ def save_to_gsheet(sheet_name, session_key, user):
             st.error("元データが見つかりません。『データを取得』を押してください。")
             return
 
-        # ✅ 施設名（またはユニークなID列）をキーにマージ更新
-        key_col = "施設名"  # 一意のキーが別にあるならここを変更
+        current_full = pd.DataFrame(ws.get_all_records())
+
+        # ✅ 「施設名」をキーにマージ更新
+        key_col = "施設名"
         if key_col not in full_original.columns or key_col not in displayed.columns:
             st.error("『施設名』列が見つかりません。キー列を確認してください。")
             return
 
-        # 元データのコピー
-        merged = full_original.copy()
-
-        # 同じ施設名の行を上書き
+        merged = current_full.copy()
         for _, row in displayed.iterrows():
             key_val = row[key_col]
             mask = merged[key_col] == key_val
@@ -104,7 +165,6 @@ def save_to_gsheet(sheet_name, session_key, user):
                     merged.loc[mask, col] = row[col]
 
         # 差分抽出
-        current_full = pd.DataFrame(ws.get_all_records())
         diffs = compare_dataframes(current_full, merged)
 
         # 保存
@@ -112,57 +172,9 @@ def save_to_gsheet(sheet_name, session_key, user):
         values = merged.fillna("").astype(str).values.tolist()
         ws.clear()
         ws.update([header] + values, value_input_option="USER_ENTERED")
-
-        st.success("✅ 編集した行だけスプレッドシートに反映しました！")
+        st.success("✅ 編集内容をスプレッドシートに反映しました（他行は保持）")
 
         # 履歴追記
-        if diffs:
-            append_history(sheet_name, user, diffs)
-            st.info(f"📝 {len(diffs)}件の変更を履歴シートに保存しました。")
-        else:
-            st.info("変更はありませんでした。")
-
-    except Exception as e:
-        st.error(f"❌ 保存中にエラー: {e}")
-
-# ======================================
-# 保存処理（履歴シートのみ追記・非表示列保持）
-# ======================================
-def save_to_gsheet(sheet_name, session_key, user):
-    try:
-        client = connect_to_gsheet()
-        sh = client.open_by_key(SPREADSHEET_ID)
-        ws = sh.worksheet(sheet_name)
-
-        displayed = st.session_state.get(session_key)
-        full_original = st.session_state.get(f"{session_key}_full")
-
-        if displayed is None or full_original is None:
-            st.error("元データが見つかりません。『データを取得』を押してください。")
-            return
-
-        current_full = pd.DataFrame(ws.get_all_records())
-
-        # 表示している列だけ更新（非表示列は保持）
-        merged = current_full.copy()
-        for col in displayed.columns:
-            if col in merged.columns:
-                merged.loc[:len(displayed)-1, col] = displayed[col].values
-            else:
-                merged[col] = ""
-                merged.loc[:len(displayed)-1, col] = displayed[col].values
-
-        # 差分抽出
-        diffs = compare_dataframes(current_full, merged)
-
-        # 保存
-        header = merged.columns.tolist()
-        values = merged.fillna("").astype(str).values.tolist()
-        ws.clear()
-        ws.update([header] + values, value_input_option="USER_ENTERED")
-        st.success("✅ スプレッドシートに上書き保存しました（非表示列も保持）")
-
-        # 履歴のみ追記
         if diffs:
             append_history(sheet_name, user, diffs)
             st.info(f"📝 {len(diffs)}件の変更を履歴シートに保存しました。")
@@ -225,7 +237,7 @@ with tabs[1]:
                 save_to_gsheet("生体", "seitai_df", st.session_state["user_name"])
 
 # ======================================
-# カレンダー
+# カレンダータブ
 # ======================================
 with tabs[2]:
     st.header("📅 点検スケジュール生成")
