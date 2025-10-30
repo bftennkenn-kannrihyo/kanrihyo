@@ -213,12 +213,12 @@ with tabs[3]:
             with st.expander("➕ 新規ユーザーを登録"):
                 with st.form("add_user_form", clear_on_submit=True):
                     new_name = st.text_input("名前")
-                    new_dept = st.text_input("所属（任意）")
                     new_mail = st.text_input("メールアドレス（任意）")
+                    new_date = st.text_input("登録日時")
                     submitted = st.form_submit_button("登録")
 
                     if submitted and new_name.strip():
-                        new_row = {"名前": new_name, "所属": new_dept, "メールアドレス": new_mail}
+                        new_row = {"名前": new_name, "メールアドレス": new_mail, "登録日時": new_date}
                         ws_user.append_row(list(new_row.values()))
                         st.success(f"✅ 新規ユーザー『{new_name}』を登録しました！")
                         st.rerun()
