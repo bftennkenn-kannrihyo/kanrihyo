@@ -13,7 +13,7 @@ st.title("🏥 管理表")
 tabs = st.tabs(["医療", "生体", "カレンダー"])
 
 # ======================================
-# Googleスプレッドシート接続関数
+# Googleスプレッドシート接続
 # ======================================
 def connect_to_gsheet():
     scope = [
@@ -21,22 +21,62 @@ def connect_to_gsheet():
         "https://www.googleapis.com/auth/drive"
     ]
     creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
-    client = gspread.authorize(creds)
-    return client
+    return gspread.authorize(creds)
 
 SPREADSHEET_ID = "15bsvTOQOJrHjgsVh2IJFzKkaig2Rk2YLA130y8_k4Vs"
 
 # ======================================
-# 共通：列選択UI + データ取得関数
+# 差分抽出関数（どこを変更したか）
+# ======================================
+def compare_dataframes(old_df, new_df):
+    diffs = []
+    for col in new_df.columns:
+        if col not in old_df.columns:
+            continue
+        for i in range(len(new_df)):
+            old_val = str(old_df.iloc[i][col]) if i < len(old_df) else ""
+            new_val = str(new_df.iloc[i][col])
+            if old_val != new_val:
+                diffs.append({"行": i + 1, "列": col, "変更前": old_val, "変更後": new_val})
+    return diffs
+
+# ======================================
+# 履歴保存（差分含む）
+# ======================================
+def save_edit_history(sheet_name, user, diffs):
+    client = connect_to_gsheet()
+    log_sheet_name = f"{sheet_name}_履歴"
+    try:
+        log_sheet = client.open_by_key(SPREADSHEET_ID).worksheet(log_sheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+        log_sheet = client.open_by_key(SPREADSHEET_ID).add_worksheet(title=log_sheet_name, rows="1000", cols="6")
+        log_sheet.append_row(["日時", "ユーザー", "対象シート", "行", "列", "変更前", "変更後"])
+
+    for diff in diffs:
+        log_sheet.append_row([
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            user,
+            sheet_name,
+            diff["行"],
+            diff["列"],
+            diff["変更前"],
+            diff["変更後"]
+        ])
+
+# ======================================
+# 共通：列選択＋データ取得
 # ======================================
 def fetch_sheet_data(sheet_name, session_key):
     st.markdown("### ✅ 表示する項目を選択")
+
     try:
         client = connect_to_gsheet()
         sheet = client.open_by_key(SPREADSHEET_ID).worksheet(sheet_name)
         columns = sheet.row_values(1)
+        all_data = sheet.get_all_records()
+        full_df = pd.DataFrame(all_data)
     except Exception as e:
-        st.error(f"❌ 列名を取得できませんでした: {e}")
+        st.error(f"❌ データ取得エラー: {e}")
         st.stop()
 
     cols = st.columns(min(5, len(columns)))
@@ -47,73 +87,68 @@ def fetch_sheet_data(sheet_name, session_key):
                 selected_cols.append(col)
 
     if st.button(f"🔄 スプレッドシートから最新データを取得（{sheet_name}）"):
-        try:
-            client = connect_to_gsheet()
-            sheet = client.open_by_key(SPREADSHEET_ID).worksheet(sheet_name)
-            data = sheet.get_all_records()
-            df = pd.DataFrame(data)
-
-            if df.empty:
-                st.warning("⚠️ スプレッドシートにデータがありません。")
-            else:
-                if selected_cols:
-                    df = df[selected_cols]
-                st.session_state[session_key] = df
-                st.success(f"✅ {len(df)}件のデータを取得しました。")
-        except Exception as e:
-            st.error(f"❌ データ取得中にエラーが発生しました: {e}")
+        st.session_state[f"{session_key}_full"] = full_df  # 全データ保持
+        if selected_cols:
+            df = full_df[selected_cols].copy()
+        else:
+            df = full_df.copy()
+        st.session_state[session_key] = df
+        st.success(f"✅ {len(df)}件のデータを取得しました。")
 
 # ======================================
-# 共通：上書き保存 + 編集履歴記録
+# 共通：保存処理（非表示列も保持）
 # ======================================
-def save_to_gsheet(sheet_name, df, user_name="不明なユーザー"):
+def save_to_gsheet(sheet_name, displayed_df, session_key, user="不明なユーザー"):
     try:
         client = connect_to_gsheet()
-        # メインデータ保存
         sheet = client.open_by_key(SPREADSHEET_ID).worksheet(sheet_name)
-        data = [df.columns.tolist()] + df.fillna("").values.tolist()
+
+        # 元データ取得
+        full_df = st.session_state.get(f"{session_key}_full")
+        if full_df is None or full_df.empty:
+            st.error("元データが見つかりません。再取得してください。")
+            return
+
+        # 非表示列を維持（表示している列だけ更新）
+        for col in displayed_df.columns:
+            full_df[col] = displayed_df[col]
+
+        # 差分を抽出
+        old_df = pd.DataFrame(sheet.get_all_records())
+        diffs = compare_dataframes(old_df, full_df)
+
+        # 更新実行
+        data = [full_df.columns.tolist()] + full_df.fillna("").values.tolist()
         sheet.clear()
         sheet.update(data)
+        st.success("✅ スプレッドシートに上書き保存しました（非表示列も保持）")
 
-        # 編集履歴追加（履歴シートに追記）
-        log_sheet_name = f"{sheet_name}_履歴"
-        try:
-            log_sheet = client.open_by_key(SPREADSHEET_ID).worksheet(log_sheet_name)
-        except gspread.exceptions.WorksheetNotFound:
-            log_sheet = client.open_by_key(SPREADSHEET_ID).add_worksheet(
-                title=log_sheet_name, rows="1000", cols="5"
-            )
-            log_sheet.append_row(["日時", "ユーザー", "対象シート", "件数", "コメント"])
-
-        log_data = [
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            user_name,
-            sheet_name,
-            len(df),
-            "上書き保存"
-        ]
-        log_sheet.append_row(log_data)
-
-        st.success(f"✅ {sheet_name}データを上書き保存しました（履歴にも記録）")
+        # 履歴記録
+        if diffs:
+            save_edit_history(sheet_name, user, diffs)
+            st.info(f"📝 {len(diffs)}件の変更を履歴に保存しました。")
+        else:
+            st.info("変更はありませんでした。")
 
     except Exception as e:
-        st.error(f"❌ {sheet_name}データの書き込み中にエラーが発生しました: {e}")
+        st.error(f"❌ 保存中にエラー: {e}")
 
 # ======================================
 # 医療タブ
 # ======================================
 with tabs[0]:
-    st.header("🩺 医療システム管理表（Googleスプレッドシート連携）")
+    st.header("🩺 医療システム管理表")
 
     fetch_sheet_data("医療", "iryo_df")
 
     if "iryo_df" in st.session_state:
+        # タイトル＋ボタンを横並びに
         col1, col2 = st.columns([5, 1])
         with col1:
             st.subheader("📋 医療データ（直接編集可）")
         with col2:
             if st.button("☁️ 上書き保存", key="save_iryo"):
-                save_to_gsheet("医療", st.session_state["iryo_df"])
+                save_to_gsheet("医療", st.session_state["iryo_df"], "iryo_df")
 
         edited_df = st.data_editor(
             st.session_state["iryo_df"],
@@ -121,13 +156,13 @@ with tabs[0]:
             hide_index=True,
             num_rows="dynamic",
         )
-        st.session_state["iryo_df"] = edited_df  # 上書き保持
+        st.session_state["iryo_df"] = edited_df
 
 # ======================================
 # 生体タブ
 # ======================================
 with tabs[1]:
-    st.header("🧬 生体システム管理表（Googleスプレッドシート連携）")
+    st.header("🧬 生体システム管理表")
 
     fetch_sheet_data("生体", "seitai_df")
 
@@ -137,7 +172,7 @@ with tabs[1]:
             st.subheader("📋 生体データ（直接編集可）")
         with col2:
             if st.button("☁️ 上書き保存", key="save_seitai"):
-                save_to_gsheet("生体", st.session_state["seitai_df"])
+                save_to_gsheet("生体", st.session_state["seitai_df"], "seitai_df")
 
         edited_df = st.data_editor(
             st.session_state["seitai_df"],
@@ -145,16 +180,14 @@ with tabs[1]:
             hide_index=True,
             num_rows="dynamic",
         )
-        st.session_state["seitai_df"] = edited_df  # 上書き保持
+        st.session_state["seitai_df"] = edited_df
 
 # ======================================
 # カレンダータブ
 # ======================================
 with tabs[2]:
     st.header("📅 点検スケジュール生成")
-
     facilities_text = st.text_area("施設名（スプレッドシートからコピペ可）", height=200)
-
     if st.button("スケジュールを生成"):
         facilities = [h.strip() for h in facilities_text.splitlines() if h.strip()]
         today = datetime.today().replace(day=1)
