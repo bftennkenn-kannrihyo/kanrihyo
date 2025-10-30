@@ -34,7 +34,6 @@ def write_with_history(sheet_name, new_df, user):
     ws = ss.worksheet(sheet_name)
     old_df = pd.DataFrame(ws.get_all_records())
 
-    # 変更を検出
     changes = []
     for i in range(min(len(new_df), len(old_df))):
         for col in new_df.columns:
@@ -45,17 +44,15 @@ def write_with_history(sheet_name, new_df, user):
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     user,
                     sheet_name,
-                    i + 2,  # Google Sheetsではヘッダーが1行目
+                    i + 2,
                     col,
                     old_val,
                     new_val
                 ])
 
-    # シート上書き
     ws.clear()
     ws.update([new_df.columns.values.tolist()] + new_df.fillna("").values.tolist())
 
-    # 履歴追記
     if changes:
         log_name = f"{sheet_name}_履歴"
         try:
@@ -71,6 +68,26 @@ def write_with_history(sheet_name, new_df, user):
 st.set_page_config(page_title="医療・生体システム管理表", layout="wide")
 st.title("🏥 医療・生体システム管理表")
 
+# ===============================
+# 👤 サイドバー：編集者選択
+# ===============================
+st.sidebar.header("👤 編集者")
+try:
+    df_user = read_sheet("ユーザー情報")
+    user_list = df_user["名前"].dropna().unique().tolist()
+    if not user_list:
+        st.sidebar.warning("登録済みユーザーがいません。『ユーザー情報』タブで登録してください。")
+        current_user = "未登録ユーザー"
+    else:
+        current_user = st.sidebar.selectbox("編集者を選択", user_list)
+        st.session_state["current_user"] = current_user
+except Exception:
+    st.sidebar.error("ユーザー情報の読み込みに失敗しました。")
+    current_user = "未登録ユーザー"
+
+# ===============================
+# タブ設定
+# ===============================
 tabs = st.tabs(["💊 医療", "🧬 生体", "📅 カレンダー", "👤 ユーザー情報"])
 
 # ===============================
@@ -80,7 +97,6 @@ def display_sheet(sheet_name):
     try:
         df = read_sheet(sheet_name)
 
-        # --- 表示列チェック ---
         st.markdown("### ✅ 表示する項目を選択")
         selected_fields = []
         cols = st.columns(min(5, len(df.columns)))
@@ -89,7 +105,7 @@ def display_sheet(sheet_name):
                 if st.checkbox(col, value=True, key=f"{sheet_name}_{col}"):
                     selected_fields.append(col)
 
-        # --- 絞り込み ---
+        # 絞り込み
         filter_active = st.checkbox("🔎 さらに絞り込みをする", value=False, key=f"filter_{sheet_name}")
         if filter_active:
             if "点検予定月" in df.columns:
@@ -104,16 +120,15 @@ def display_sheet(sheet_name):
                 if selected_areas:
                     df = df[df["エリア"].isin(selected_areas)]
 
-        # --- 編集UI ---
+        # 上書きボタン
         col1, col2 = st.columns([4, 1])
         with col1:
             st.subheader(f"📋 {sheet_name}データ（直接編集可）")
         with col2:
-            user = st.session_state.get("current_user", "未登録ユーザー")
             if st.button("💾 上書き保存", key=f"save_{sheet_name}"):
                 edited_df = st.session_state.get(f"edit_{sheet_name}", df)
-                write_with_history(sheet_name, edited_df, user)
-                st.success(f"✅ {sheet_name}の変更を保存し、履歴に記録しました。")
+                write_with_history(sheet_name, edited_df, current_user)
+                st.success(f"✅ {sheet_name}の変更を保存しました（編集者: {current_user}）")
 
         edited_df = st.data_editor(df[selected_fields], use_container_width=True, key=f"edit_{sheet_name}")
         st.session_state[f"edit_{sheet_name}"] = edited_df
