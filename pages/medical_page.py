@@ -59,7 +59,7 @@ def medical_tab(SPREADSHEET_ID, current_user):
             # --- 保存ボタン ---
             if st.button("💾 上書き保存", key="save_med"):
                 user = current_user or "不明ユーザー"
-                save_with_history(SPREADSHEET_ID, "医療", df, edited_df, user)
+                save_with_history("医療", df, edited_df, user, SPREADSHEET_ID)
 
     except Exception as e:
         st.error(f"❌ エラー: {e}")
