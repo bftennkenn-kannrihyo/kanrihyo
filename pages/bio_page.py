@@ -5,7 +5,7 @@ def bio_tab(spreadsheet_id, current_user):
     st.header("🧬 生体")
 
     try:
-        ws_bio, df_bio = load_sheet(spreadsheet_id, "生体")
+        ws_bio, df_bio = load_sheet(SPREADSHEET_ID, "生体")
 
         st.markdown("### ✅ 表示する項目を選択")
         selected_fields = []
