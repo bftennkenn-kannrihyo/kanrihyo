@@ -1,114 +1,65 @@
-import streamlit as st
 import gspread
 import pandas as pd
-from datetime import datetime
 from google.oauth2.service_account import Credentials
+from datetime import datetime
+import streamlit as st
 
+SPREADSHEET_ID = "15bsvTOQOJrHjgsVh2IJFzKkaig2Rk2YLA130y8_k4Vs"
 
 # =====================================
 # 🔗 Googleスプレッドシート接続
 # =====================================
-@st.cache_resource
-def connect_gspread():
-    """Googleスプレッドシートに接続してクライアントを返す"""
+def connect_to_gsheet():
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
     creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
-    return gspread.authorize(creds)
+    client = gspread.authorize(creds)
+    return client
 
 
-# =====================================
-# 📄 シートの読み込み（キャッシュ付き）
-# =====================================
-@st.cache_data(ttl=180)  # 3分間キャッシュ保持
-def load_sheet(spreadsheet_id, sheet_name, header_only=False):
-    """
-    Googleスプレッドシートを読み込む
-    header_only=True の場合は1行目（列名）だけ読み込む
-    """
-    client = connect_gspread()
-    ws = client.open_by_key(spreadsheet_id).worksheet(sheet_name)
-
-    if header_only:
-        headers = ws.row_values(1)
-        df = pd.DataFrame(columns=headers)
-    else:
-        records = ws.get_all_records()
-        if not records:
-            headers = ws.row_values(1)
-            df = pd.DataFrame(columns=headers)
-        else:
-            df = pd.DataFrame(records)
-
-    return ws, df
+def read_sheet(sheet_name):
+    """スプレッドシートからDataFrameとして読み込み"""
+    client = connect_to_gsheet()
+    ws = client.open_by_key(SPREADSHEET_ID).worksheet(sheet_name)
+    data = ws.get_all_records()
+    return pd.DataFrame(data)
 
 
-# =====================================
-# 💾 データ保存＆履歴追加（安定版）
-# =====================================
-def save_with_history(spreadsheet_id, sheet_name, df_before, df_after, user):
-    """
-    フィルタ表示で編集された行のみを更新。
-    表示されていないデータは保持したまま。
-    履歴シート（{シート名}_履歴）には変更内容を追記。
-    """
-    try:
-        client = connect_gspread()
-        ws = client.open_by_key(spreadsheet_id).worksheet(sheet_name)
+def write_with_history(sheet_name, new_df, user):
+    """変更検出＋履歴書き込み"""
+    client = connect_to_gsheet()
+    ss = client.open_by_key(SPREADSHEET_ID)
+    ws = ss.worksheet(sheet_name)
+    old_df = pd.DataFrame(ws.get_all_records())
 
-        # Googleシート全体のデータを取得（削除しないため）
-        all_data = pd.DataFrame(ws.get_all_records())
-        headers = ws.row_values(1)
+    changes = []
+    for i in range(min(len(new_df), len(old_df))):
+        for col in new_df.columns:
+            old_val = str(old_df.at[i, col]) if col in old_df.columns else ""
+            new_val = str(new_df.at[i, col])
+            if old_val != new_val:
+                changes.append([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    user,
+                    sheet_name,
+                    i + 2,
+                    col,
+                    old_val,
+                    new_val
+                ])
 
-        if all_data.empty:
-            raise ValueError("シートにデータが存在しません。")
+    # データ更新
+    ws.clear()
+    ws.update([new_df.columns.values.tolist()] + new_df.fillna("").values.tolist())
 
-        # NaN対策
-        df_before = df_before.fillna("").astype(str)
-        df_after = df_after.fillna("").astype(str)
-        all_data = all_data.fillna("").astype(str)
-
-        # 履歴記録用
-        ws_history = client.open_by_key(spreadsheet_id).worksheet(f"{sheet_name}_履歴")
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        diffs = []
-
-        # 編集対象の施設名などを基準に行を特定（「施設名」が主キー想定）
-        key_col = "施設名"
-        if key_col not in df_after.columns:
-            raise ValueError("『施設名』列が存在しません。主キーに必要です。")
-
-        # 各行ごとに差分検出して反映
-        for _, row_after in df_after.iterrows():
-            key_val = row_after[key_col]
-
-            if key_val in all_data[key_col].values:
-                row_idx = all_data[all_data[key_col] == key_val].index[0]
-                for col in df_after.columns:
-                    before_val = all_data.at[row_idx, col] if col in all_data.columns else ""
-                    after_val = row_after[col]
-                    if before_val != after_val:
-                        all_data.at[row_idx, col] = after_val
-                        diffs.append([now, user, sheet_name, row_idx + 2, col, before_val, after_val])
-            else:
-                # 新しい施設名の追加（新規行）
-                new_row = {c: row_after.get(c, "") for c in headers}
-                all_data = pd.concat([all_data, pd.DataFrame([new_row])], ignore_index=True)
-                diffs.append([now, user, sheet_name, len(all_data) + 1, "新規行", "", str(row_after.to_dict())])
-
-        # シート更新（全体再書き込みではなく安全に）
-        ws.update([headers] + all_data.values.tolist())
-
-        # 履歴追記
-        if diffs:
-            ws_history.append_rows(diffs)
-            st.success("✅ 変更を部分的に反映し、履歴を追加しました。")
-        else:
-            st.info("変更はありません。")
-
-    except Exception as e:
-        st.error(f"❌ 保存時エラー: {type(e).__name__} - {e}")
-
-
+    # 履歴保存
+    if changes:
+        log_name = f"{sheet_name}_履歴"
+        try:
+            ws_log = ss.worksheet(log_name)
+        except gspread.WorksheetNotFound:
+            ws_log = ss.add_worksheet(title=log_name, rows=1000, cols=10)
+            ws_log.append_row(["日時", "ユーザー", "対象シート", "行", "列", "変更前", "変更後"])
+        ws_log.append_rows(changes)
