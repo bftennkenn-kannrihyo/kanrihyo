@@ -8,6 +8,7 @@ from google.oauth2.service_account import Credentials
 # =====================================
 # 🔗 Googleスプレッドシート接続
 # =====================================
+@st.cache_resource
 def connect_gspread():
     """Googleスプレッドシートに接続してクライアントを返す"""
     scope = [
@@ -19,8 +20,9 @@ def connect_gspread():
 
 
 # =====================================
-# 📄 シートの読み込み（ヘッダーのみ or 全件）
+# 📄 シートの読み込み（キャッシュ付き）
 # =====================================
+@st.cache_data(ttl=180)  # 3分間キャッシュ保持
 def load_sheet(spreadsheet_id, sheet_name, header_only=False):
     """
     Googleスプレッドシートを読み込む
@@ -30,11 +32,9 @@ def load_sheet(spreadsheet_id, sheet_name, header_only=False):
     ws = client.open_by_key(spreadsheet_id).worksheet(sheet_name)
 
     if header_only:
-        # 1行目（ヘッダー）だけ取得
         headers = ws.row_values(1)
         df = pd.DataFrame(columns=headers)
     else:
-        # 全データ取得
         records = ws.get_all_records()
         if not records:
             headers = ws.row_values(1)
@@ -53,27 +53,22 @@ def save_with_history(spreadsheet_id, sheet_name, df_before, df_after, user):
     データを上書き保存し、変更履歴をシートに追加する。
     履歴シート名は「{シート名}_履歴」
     """
-
     try:
         client = connect_gspread()
 
         # --- メインシート更新 ---
         ws = client.open_by_key(spreadsheet_id).worksheet(sheet_name)
-
-        # 全列そろえる（表示されていない列を消さないため）
         all_headers = ws.row_values(1)
+
         for col in all_headers:
             if col not in df_after.columns:
                 df_after[col] = df_before[col] if col in df_before.columns else ""
-
-        # 並び順も元のままにする
         df_after = df_after[all_headers]
 
-        # 上書き更新
         ws.clear()
         ws.update([df_after.columns.values.tolist()] + df_after.fillna("").astype(str).values.tolist())
 
-        # --- 履歴シート処理 ---
+        # --- 履歴処理 ---
         ws_history_name = f"{sheet_name}_履歴"
         ws_history = client.open_by_key(spreadsheet_id).worksheet(ws_history_name)
 
