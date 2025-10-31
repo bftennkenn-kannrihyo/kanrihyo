@@ -55,29 +55,37 @@ def save_with_history(spreadsheet_id, sheet_name, df_before, df_after, user):
     """
     try:
         client = connect_gspread()
-
-        # --- メインシート更新 ---
         ws = client.open_by_key(spreadsheet_id).worksheet(sheet_name)
-        all_headers = ws.row_values(1)
 
-        for col in all_headers:
+        # ---- シートの既存ヘッダーを取得 ----
+        headers = ws.row_values(1)
+        if not headers:
+            raise ValueError(f"{sheet_name} の1行目にヘッダーが存在しません。")
+
+        # ---- 不足列を補う＆並び順を揃える ----
+        for col in headers:
             if col not in df_after.columns:
                 df_after[col] = df_before[col] if col in df_before.columns else ""
-        df_after = df_after[all_headers]
+        df_after = df_after[headers]
 
+        # ---- NaNを空文字に置換して安全化 ----
+        df_after = df_after.fillna("").astype(str)
+        df_before = df_before.fillna("").astype(str)
+
+        # ---- シートを上書き更新 ----
         ws.clear()
-        ws.update([df_after.columns.values.tolist()] + df_after.fillna("").astype(str).values.tolist())
+        ws.update([headers] + df_after.values.tolist())
 
-        # --- 履歴処理 ---
+        # ---- 履歴処理 ----
         ws_history_name = f"{sheet_name}_履歴"
         ws_history = client.open_by_key(spreadsheet_id).worksheet(ws_history_name)
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         diffs = []
         for r in range(len(df_before)):
-            for c in df_before.columns:
-                before = str(df_before.loc[r, c]) if c in df_before.columns else ""
-                after = str(df_after.loc[r, c]) if c in df_after.columns else ""
+            for c in headers:
+                before = df_before.at[r, c] if c in df_before.columns else ""
+                after = df_after.at[r, c] if c in df_after.columns else ""
                 if before != after:
                     diffs.append([now, user, sheet_name, r + 2, c, before, after])
 
@@ -88,4 +96,5 @@ def save_with_history(spreadsheet_id, sheet_name, df_before, df_after, user):
             st.info("変更はありません。")
 
     except Exception as e:
-        st.error(f"❌ 保存時エラー: {e}")
+        st.error(f"❌ 保存時エラー: {type(e).__name__} - {e}")
+
