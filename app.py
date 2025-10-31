@@ -15,7 +15,7 @@ SPREADSHEET_ID = "15bsvTOQOJrHjgsVh2IJFzKkaig2Rk2YLA130y8_k4Vs"
 # ===== ユーザー選択 =====
 try:
     client = connect_gspread()
-    ws_user, df_users = load_sheet("ユーザー情報")
+    ws_user, df_users = load_sheet(SPREADSHEET_ID, "ユーザー情報")
 
     if "名前" not in df_users.columns:
         st.sidebar.error("❌ 『名前』列が見つかりません。")
