@@ -5,7 +5,7 @@ def medical_tab():
     st.header("🏥 医療データ管理")
 
     try:
-        ws, df = load_sheet("医療")
+        load_sheet(SPREADSHEET_ID, "医療")
 
         st.markdown("### ✅ 表示する項目を選択")
         selected_cols = []
