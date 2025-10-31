@@ -50,51 +50,65 @@ def load_sheet(spreadsheet_id, sheet_name, header_only=False):
 # =====================================
 def save_with_history(spreadsheet_id, sheet_name, df_before, df_after, user):
     """
-    データを上書き保存し、変更履歴をシートに追加する。
-    履歴シート名は「{シート名}_履歴」
+    フィルタ表示で編集された行のみを更新。
+    表示されていないデータは保持したまま。
+    履歴シート（{シート名}_履歴）には変更内容を追記。
     """
     try:
         client = connect_gspread()
         ws = client.open_by_key(spreadsheet_id).worksheet(sheet_name)
 
-        # ---- シートの既存ヘッダーを取得 ----
+        # Googleシート全体のデータを取得（削除しないため）
+        all_data = pd.DataFrame(ws.get_all_records())
         headers = ws.row_values(1)
-        if not headers:
-            raise ValueError(f"{sheet_name} の1行目にヘッダーが存在しません。")
 
-        # ---- 不足列を補う＆並び順を揃える ----
-        for col in headers:
-            if col not in df_after.columns:
-                df_after[col] = df_before[col] if col in df_before.columns else ""
-        df_after = df_after[headers]
+        if all_data.empty:
+            raise ValueError("シートにデータが存在しません。")
 
-        # ---- NaNを空文字に置換して安全化 ----
-        df_after = df_after.fillna("").astype(str)
+        # NaN対策
         df_before = df_before.fillna("").astype(str)
+        df_after = df_after.fillna("").astype(str)
+        all_data = all_data.fillna("").astype(str)
 
-        # ---- シートを上書き更新 ----
-        ws.clear()
-        ws.update([headers] + df_after.values.tolist())
-
-        # ---- 履歴処理 ----
-        ws_history_name = f"{sheet_name}_履歴"
-        ws_history = client.open_by_key(spreadsheet_id).worksheet(ws_history_name)
-
+        # 履歴記録用
+        ws_history = client.open_by_key(spreadsheet_id).worksheet(f"{sheet_name}_履歴")
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         diffs = []
-        for r in range(len(df_before)):
-            for c in headers:
-                before = df_before.at[r, c] if c in df_before.columns else ""
-                after = df_after.at[r, c] if c in df_after.columns else ""
-                if before != after:
-                    diffs.append([now, user, sheet_name, r + 2, c, before, after])
 
+        # 編集対象の施設名などを基準に行を特定（「施設名」が主キー想定）
+        key_col = "施設名"
+        if key_col not in df_after.columns:
+            raise ValueError("『施設名』列が存在しません。主キーに必要です。")
+
+        # 各行ごとに差分検出して反映
+        for _, row_after in df_after.iterrows():
+            key_val = row_after[key_col]
+
+            if key_val in all_data[key_col].values:
+                row_idx = all_data[all_data[key_col] == key_val].index[0]
+                for col in df_after.columns:
+                    before_val = all_data.at[row_idx, col] if col in all_data.columns else ""
+                    after_val = row_after[col]
+                    if before_val != after_val:
+                        all_data.at[row_idx, col] = after_val
+                        diffs.append([now, user, sheet_name, row_idx + 2, col, before_val, after_val])
+            else:
+                # 新しい施設名の追加（新規行）
+                new_row = {c: row_after.get(c, "") for c in headers}
+                all_data = pd.concat([all_data, pd.DataFrame([new_row])], ignore_index=True)
+                diffs.append([now, user, sheet_name, len(all_data) + 1, "新規行", "", str(row_after.to_dict())])
+
+        # シート更新（全体再書き込みではなく安全に）
+        ws.update([headers] + all_data.values.tolist())
+
+        # 履歴追記
         if diffs:
             ws_history.append_rows(diffs)
-            st.success("✅ 変更を保存し、履歴を追加しました。")
+            st.success("✅ 変更を部分的に反映し、履歴を追加しました。")
         else:
             st.info("変更はありません。")
 
     except Exception as e:
         st.error(f"❌ 保存時エラー: {type(e).__name__} - {e}")
+
 
