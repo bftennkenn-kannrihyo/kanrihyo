@@ -5,7 +5,7 @@ def user_tab(spreadsheet_id, current_user):
     st.header("👤 ユーザー情報")
 
     try:
-        ws_user, df_users = load_sheet(spreadsheet_id, "ユーザー情報")
+        ws_user, df_users = load_sheet(SPREADSHEET_ID, "ユーザー情報")
         st.subheader("📋 登録ユーザー一覧")
 
         edited_users = st.data_editor(df_users, use_container_width=True, key="edit_users")
