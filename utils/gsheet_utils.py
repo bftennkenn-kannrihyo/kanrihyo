@@ -1,42 +1,32 @@
+# utils/gsheet_utils.py
 import gspread
 import pandas as pd
-from google.oauth2.service_account import Credentials
-import streamlit as st
 from datetime import datetime
+from google.oauth2.service_account import Credentials
 
 def connect_gspread():
-    """Googleスプレッドシートに接続"""
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=300)  # 5分間キャッシュ
 def load_sheet(spreadsheet_id, sheet_name):
-    """スプレッドシートのデータを取得（キャッシュ対応）"""
     client = connect_gspread()
     ws = client.open_by_key(spreadsheet_id).worksheet(sheet_name)
     df = pd.DataFrame(ws.get_all_records())
     return ws, df
 
-def save_with_history(sheet_name, df_before, df_after, user, spreadsheet_id):
-    import gspread
-    from datetime import datetime
-    from google.oauth2.service_account import Credentials
-    import streamlit as st
 
-    # --- Google認証 ---
-    scope = ["https://www.googleapis.com/auth/spreadsheets",
-             "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_info(st.secrets["default"], scopes=scope)
-    client = gspread.authorize(creds)
-
+def save_with_history(spreadsheet_id, sheet_name, df_before, df_after, user):
+    """変更を保存して履歴シートに追記"""
+    client = connect_gspread()
     ws = client.open_by_key(spreadsheet_id).worksheet(sheet_name)
     ws.update([df_after.columns.values.tolist()] + df_after.values.tolist())
 
-    # --- 履歴用ワークシート ---
-    history_name = f"{sheet_name}_履歴"
-    ws_history = client.open_by_key(spreadsheet_id).worksheet(history_name)
+    # 履歴シートを取得
+    ws_history_name = f"{sheet_name}_履歴"
+    ws_history = client.open_by_key(spreadsheet_id).worksheet(ws_history_name)
 
+    # 差分を検出して履歴を追記
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     diffs = []
     for r in range(len(df_before)):
