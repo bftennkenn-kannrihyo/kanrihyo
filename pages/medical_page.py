@@ -6,8 +6,14 @@ def medical_tab(spreadsheet_id, current_user):
     st.header("🏥 医療データ管理")
 
     try:
-        ws, df = load_sheet(spreadsheet_id, "医療")  # ✅ load_sheet の戻り値を受け取る
+        # スプレッドシートの読み込み
+        ws, df = load_sheet(spreadsheet_id, "医療")
 
+        if df.empty:
+            st.warning("⚠️ データが存在しません。スプレッドシートを確認してください。")
+            return
+
+        # --- 表示列チェック ---
         st.markdown("### ✅ 表示する項目を選択")
         selected_cols = []
         cols = st.columns(min(5, len(df.columns)))
@@ -48,8 +54,14 @@ def medical_tab(spreadsheet_id, current_user):
         if "filtered_med" in st.session_state:
             st.subheader("📋 医療一覧")
             edited_df = st.data_editor(st.session_state["filtered_med"], use_container_width=True, key="edit_med")
+
             if st.button("💾 上書き保存", key="save_med"):
-                save_with_history(spreadsheet_id, "医療", df, edited_df, current_user)
+                try:
+                    save_with_history(spreadsheet_id, "医療", df, edited_df, current_user)
+                except Exception as save_err:
+                    st.error(f"❌ 保存時エラー: {save_err}")
 
     except Exception as e:
-        st.error(f"❌ エラー: {e}")
+        import traceback
+        st.error(f"❌ エラー発生: {e}")
+        st.text(traceback.format_exc())  # ← 詳細なトレースを出力
