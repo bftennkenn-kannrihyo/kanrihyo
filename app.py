@@ -1,44 +1,33 @@
-# app.py
 import streamlit as st
 import pandas as pd
+from io import BytesIO
 
-st.set_page_config(page_title="Excel参照", layout="wide")
-st.title("📄 SharePointのExcelを参照（方式A）")
+st.set_page_config(page_title="Excel管理アプリ", layout="wide")
+st.title("📊 Excelインポート・エクスポート管理")
 
-# ここだけSharePoint読み込み
-from utils.sharepoint_fetch import load_excel_from_share_link
+uploaded_file = st.file_uploader("Excelファイルをアップロード", type=["xlsx", "xls"])
 
-try:
-    data_map = load_excel_from_share_link()
-except Exception as e:
-    st.error(f"読み込みエラー: {e}")
-    st.stop()
+if uploaded_file is not None:
+    df = pd.read_excel(uploaded_file)
+    st.success("✅ ファイルを読み込みました")
 
-if not data_map:
-    st.warning("Excelにシートがありません")
-    st.stop()
+    # データ編集画面
+    edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
-tabs = st.tabs(list(data_map.keys()))
-for tab, name in zip(tabs, data_map.keys()):
-    with tab:
-        df = data_map[name].copy()
-        st.caption(f"シート: {name} / 行数: {len(df):,}")
+    # Excelエクスポート関数
+    def to_excel(df):
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False)
+        return output.getvalue()
 
-        # 列選択
-        cols = st.multiselect("表示列", list(df.columns), default=list(df.columns), key=f"cols_{name}")
-        view = df[cols] if cols else df
-
-        # 全列キーワード検索
-        q = st.text_input("キーワード検索（全列）", key=f"q_{name}")
-        if q:
-            mask = view.astype(str).apply(lambda r: q.lower() in " ".join(r).lower(), axis=1)
-            view = view[mask]
-
-        st.dataframe(view, use_container_width=True, height=520)
-        st.download_button(
-            "CSVダウンロード",
-            data=view.to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"{name}.csv",
-            mime="text/csv",
-            key=f"dl_{name}",
-        )
+    # ダウンロードボタン
+    excel_data = to_excel(edited_df)
+    st.download_button(
+        label="📥 編集後データをダウンロード",
+        data=excel_data,
+        file_name="updated_data.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+else:
+    st.info("👆 Excelファイルをアップロードしてください。")
